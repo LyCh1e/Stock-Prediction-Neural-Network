@@ -93,14 +93,14 @@ class StockPriceGUI:
         list_frame.rowconfigure(0, weight=1)
         
         # Create treeview with more columns
-        columns = ('Symbol', 'Current', 'Best Buy', 'Best Sell', 'Avg Profit', 'Confidence', 'Sentiment', 'Status')
+        columns = ('Symbol', 'Current', 'Expected High', 'Expected Low', 'Avg Profit', 'Confidence', 'Sentiment', 'Status')
         self.tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
         
         # Define headings
         self.tree.heading('Symbol', text='Symbol')
         self.tree.heading('Current', text='Current Price')
-        self.tree.heading('Best Buy', text='Best Buy')
-        self.tree.heading('Best Sell', text='Best Sell')
+        self.tree.heading('Expected High', text='Expected High')
+        self.tree.heading('Expected Low', text='Expected Low')
         self.tree.heading('Avg Profit', text='Avg Profit %')
         self.tree.heading('Confidence', text='Confidence')
         self.tree.heading('Sentiment', text='Sentiment')
@@ -109,8 +109,8 @@ class StockPriceGUI:
         # Define column widths
         self.tree.column('Symbol', width=80)
         self.tree.column('Current', width=90)
-        self.tree.column('Best Buy', width=90)
-        self.tree.column('Best Sell', width=90)
+        self.tree.column('Expected High', width=90)
+        self.tree.column('Expected Low', width=90)
         self.tree.column('Avg Profit', width=90)
         self.tree.column('Confidence', width=90)
         self.tree.column('Sentiment', width=90)
@@ -163,7 +163,7 @@ class StockPriceGUI:
         
         ttk.Button(viz_buttons, text="Show Scenario Comparison", command=self.show_scenario_comparison).pack(side=tk.LEFT, padx=2)
         ttk.Button(viz_buttons, text="Show Price Trend", command=self.show_price_trend).pack(side=tk.LEFT, padx=2)
-        ttk.Button(viz_buttons, text="Show Profit Potential", command=self.show_profit_potential).pack(side=tk.LEFT, padx=2)
+        ttk.Button(viz_buttons, text="Show Price Range Analysis", command=self.show_price_range_analysis).pack(side=tk.LEFT, padx=2)
         ttk.Button(viz_buttons, text="Clear Plot", command=self.clear_plot).pack(side=tk.LEFT, padx=2)
         
         # === Log Section ===
@@ -402,15 +402,15 @@ class StockPriceGUI:
             avg_case = scenarios['average_case']
             
             current_price = f"${prediction['current_price']:.2f}"
-            best_buy = f"${scenarios['best_case']['buy_price']:.2f}"
-            best_sell = f"${scenarios['best_case']['sell_price']:.2f}"
+            expected_high = f"${avg_case['high']:.2f}"
+            expected_low = f"${avg_case['low']:.2f}"
             avg_profit = f"{avg_case['profit_potential']:.1f}%"
             confidence = f"{prediction['confidence']*100:.0f}%"
             sentiment = prediction['market_sentiment'].capitalize()
         else:
             current_price = '-'
-            best_buy = '-'
-            best_sell = '-'
+            expected_high = '-'
+            expected_low = '-'
             avg_profit = '-'
             confidence = '-'
             sentiment = '-'
@@ -418,8 +418,8 @@ class StockPriceGUI:
         self.tree.item(symbol, values=(
             symbol,
             current_price,
-            best_buy,
-            best_sell,
+            expected_high,
+            expected_low,
             avg_profit,
             confidence,
             sentiment,
@@ -456,61 +456,80 @@ Confidence Level:   {prediction['confidence']*100:.1f}%
 Last Updated:       {prediction['last_updated']}
 
 {'='*60}
-SCENARIO ANALYSIS
+PRICE RANGE PREDICTIONS
 {'='*60}
 
 >>> BEST CASE (Optimistic) <<<
-  Buy Price:        ${scenarios['best_case']['buy_price']:.2f}
-  Sell Price:       ${scenarios['best_case']['sell_price']:.2f}
   Expected High:    ${scenarios['best_case']['high']:.2f}
   Expected Low:     ${scenarios['best_case']['low']:.2f}
+  Open Price:       ${scenarios['best_case']['open']:.2f}
+  Close Price:      ${scenarios['best_case']['close']:.2f}
   Profit Potential: {scenarios['best_case']['profit_potential']:.1f}%
   Volume:           {scenarios['best_case']['volume']:,.0f}
+  Price Range:      ${scenarios['best_case']['low']:.2f} - ${scenarios['best_case']['high']:.2f}
 
 >>> AVERAGE CASE (Most Likely) <<<
-  Buy Price:        ${scenarios['average_case']['buy_price']:.2f}
-  Sell Price:       ${scenarios['average_case']['sell_price']:.2f}
   Expected High:    ${scenarios['average_case']['high']:.2f}
   Expected Low:     ${scenarios['average_case']['low']:.2f}
+  Open Price:       ${scenarios['average_case']['open']:.2f}
+  Close Price:      ${scenarios['average_case']['close']:.2f}
   Profit Potential: {scenarios['average_case']['profit_potential']:.1f}%
   Volume:           {scenarios['average_case']['volume']:,.0f}
+  Price Range:      ${scenarios['average_case']['low']:.2f} - ${scenarios['average_case']['high']:.2f}
 
 >>> WORST CASE (Conservative) <<<
-  Buy Price:        ${scenarios['worst_case']['buy_price']:.2f}
-  Sell Price:       ${scenarios['worst_case']['sell_price']:.2f}
   Expected High:    ${scenarios['worst_case']['high']:.2f}
   Expected Low:     ${scenarios['worst_case']['low']:.2f}
+  Open Price:       ${scenarios['worst_case']['open']:.2f}
+  Close Price:      ${scenarios['worst_case']['close']:.2f}
   Profit Potential: {scenarios['worst_case']['profit_potential']:.1f}%
   Volume:           {scenarios['worst_case']['volume']:,.0f}
+  Price Range:      ${scenarios['worst_case']['low']:.2f} - ${scenarios['worst_case']['high']:.2f}
 
 {'='*60}
-TRADING RECOMMENDATION
+TRADING INSIGHTS
 {'='*60}
 """
         
-        # Add trading recommendation
-        avg_profit = scenarios['average_case']['profit_potential']
+        # Add trading insights
+        avg_high = scenarios['average_case']['high']
+        avg_low = scenarios['average_case']['low']
+        current_price = prediction['current_price']
         confidence = prediction['confidence']
         
-        if avg_profit > 5 and confidence > 0.7:
-            recommendation = "STRONG BUY - High profit potential with good confidence"
-        elif avg_profit > 2:
-            recommendation = "BUY - Positive profit potential"
-        elif avg_profit > -1:
-            recommendation = "HOLD - Wait for better entry point"
+        if current_price < avg_low and confidence > 0.7:
+            insight = "PRICE BELOW EXPECTED RANGE - Potential buying opportunity if fundamentals are strong"
+        elif current_price > avg_high and confidence > 0.7:
+            insight = "PRICE ABOVE EXPECTED RANGE - Consider profit-taking or wait for pullback"
+        elif avg_high - avg_low < current_price * 0.02:
+            insight = "NARROW EXPECTED RANGE - Low volatility expected, sideways movement likely"
+        elif avg_high - avg_low > current_price * 0.05:
+            insight = "WIDE EXPECTED RANGE - High volatility expected, significant movement possible"
         else:
-            recommendation = "AVOID - Negative profit potential"
+            insight = "PRICE WITHIN EXPECTED RANGE - Normal trading conditions expected"
         
-        details += f"\n{recommendation}\n"
+        details += f"\n{insight}\n"
+        
+        # Add risk assessment
+        risk_potential = (scenarios['worst_case']['low'] - current_price) / current_price * 100
+        reward_potential = (scenarios['best_case']['high'] - current_price) / current_price * 100
+        
+        details += f"\nRisk/Reward Assessment:"
+        details += f"\n  Downside Risk: {risk_potential:.1f}%"
+        details += f"\n  Upside Potential: {reward_potential:.1f}%"
+        details += f"\n  Risk/Reward Ratio: {abs(reward_potential / risk_potential if risk_potential != 0 else 0):.2f}:1"
         
         # Add technical indicators if available
         if 'technical_indicators' in prediction and prediction['technical_indicators']:
             indicators = prediction['technical_indicators']
-            details += f"\n{'='*60}\nTECHNICAL INDICATORS\n{'='*60}\n"
+            details += f"\n\n{'='*60}\nTECHNICAL INDICATORS\n{'='*60}\n"
             
             for key, value in indicators.items():
                 if isinstance(value, float):
-                    details += f"{key.replace('_', ' ').title()}: {value:.2f}\n"
+                    if 'volatility' in key.lower():
+                        details += f"{key.replace('_', ' ').title()}: {value:.2f}%\n"
+                    else:
+                        details += f"{key.replace('_', ' ').title()}: {value:.2f}\n"
                 else:
                     details += f"{key.replace('_', ' ').title()}: {value}\n"
         
@@ -531,6 +550,16 @@ TRADING RECOMMENDATION
                     end = f"{start}+{len(line)}c"
                     self.detail_text.tag_add("positive", start, end)
             elif "WORST CASE" in line:
+                start = self.detail_text.search(line, 1.0)
+                if start:
+                    end = f"{start}+{len(line)}c"
+                    self.detail_text.tag_add("negative", start, end)
+            elif "PRICE BELOW" in line:
+                start = self.detail_text.search(line, 1.0)
+                if start:
+                    end = f"{start}+{len(line)}c"
+                    self.detail_text.tag_add("positive", start, end)
+            elif "PRICE ABOVE" in line:
                 start = self.detail_text.search(line, 1.0)
                 if start:
                     end = f"{start}+{len(line)}c"
@@ -565,14 +594,20 @@ TRADING RECOMMENDATION
         
         colors = ['#4CAF50', '#2196F3', '#F44336']
         
-        # Plot 1: Buy/Sell Prices
+        # Plot 1: High/Low Price Ranges
         for i, (name, data) in enumerate(zip(scenario_names, scenario_data)):
-            ax1.bar(i, data['buy_price'], width=0.6, color=colors[i], alpha=0.7, label=f'{name} Buy')
-            ax1.bar(i + 0.35, data['sell_price'], width=0.6, color=colors[i], alpha=0.9, label=f'{name} Sell', hatch='//')
+            # Plot the range bar
+            ax1.bar(i, data['high'] - data['low'], bottom=data['low'], width=0.6, 
+                   color=colors[i], alpha=0.5, label=f'{name} Range')
+            # Plot open and close markers
+            ax1.plot(i, data['open'], '^', markersize=10, color='blue', markeredgecolor='black', 
+                    label='Open' if i == 0 else "")
+            ax1.plot(i, data['close'], 'v', markersize=10, color='red', markeredgecolor='black', 
+                    label='Close' if i == 0 else "")
         
-        ax1.set_title(f'{symbol} - Buy/Sell Prices')
+        ax1.set_title(f'{symbol} - Price Ranges')
         ax1.set_ylabel('Price ($)')
-        ax1.set_xticks([0.175, 1.175, 2.175])
+        ax1.set_xticks([0, 1, 2])
         ax1.set_xticklabels(['Best', 'Average', 'Worst'])
         ax1.grid(True, alpha=0.3)
         ax1.legend()
@@ -598,18 +633,19 @@ TRADING RECOMMENDATION
             ax2.text(bar.get_x() + bar.get_width()/2., height,
                     f'{height:.1f}%', ha='center', va='bottom' if height >= 0 else 'top')
         
-        # Plot 3: Price Ranges (High-Low)
-        for i, data in enumerate(scenario_data):
-            ax3.plot([i, i], [data['low'], data['high']], 'k-', linewidth=3)
-            ax3.plot(i, data['open'], '^', markersize=10, color='blue', label='Open' if i == 0 else "")
-            ax3.plot(i, data['close'], 'v', markersize=10, color='red', label='Close' if i == 0 else "")
-        
-        ax3.set_title(f'{symbol} - Price Ranges')
-        ax3.set_ylabel('Price ($)')
-        ax3.set_xticks([0, 1, 2])
-        ax3.set_xticklabels(['Best', 'Average', 'Worst'])
-        ax3.legend()
+        # Plot 3: Volume Comparison
+        volumes = [data['volume'] for data in scenario_data]
+        bars3 = ax3.bar(scenario_names, volumes, color=colors, alpha=0.7)
+        ax3.set_title(f'{symbol} - Expected Volume')
+        ax3.set_ylabel('Volume')
+        ax3.ticklabel_format(style='scientific', axis='y', scilimits=(0,0))
         ax3.grid(True, alpha=0.3)
+        
+        # Add value labels on volume bars
+        for bar in bars3:
+            height = bar.get_height()
+            ax3.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height/1e6:.1f}M', ha='center', va='bottom', fontsize=9)
         
         self.fig.suptitle(f'{symbol} Price Prediction Scenarios - Confidence: {prediction["confidence"]*100:.0f}%', fontsize=14)
         self.fig.tight_layout()
@@ -646,20 +682,32 @@ TRADING RECOMMENDATION
         prices = base_price * (1 + trend + noise.cumsum())
         
         # Plot historical trend
-        ax.plot(range(days), prices, 'b-', linewidth=2, label='Simulated Trend')
+        ax.plot(range(days), prices, 'b-', linewidth=2, label='Historical Trend')
         ax.axhline(y=base_price, color='r', linestyle='--', label='Current Price')
         
         # Add prediction markers
         prediction = stock_data['prediction']
         scenarios = prediction['scenarios']
         
-        ax.scatter(days, scenarios['best_case']['close'], color='green', s=100, marker='^', label='Best Case Target')
-        ax.scatter(days, scenarios['average_case']['close'], color='blue', s=100, marker='o', label='Avg Case Target')
-        ax.scatter(days, scenarios['worst_case']['close'], color='red', s=100, marker='v', label='Worst Case Target')
+        # Plot prediction ranges
+        ax.errorbar(days + 1, scenarios['average_case']['close'], 
+                   yerr=[[scenarios['average_case']['close'] - scenarios['average_case']['low']],
+                         [scenarios['average_case']['high'] - scenarios['average_case']['close']]],
+                   fmt='o', color='blue', capsize=5, label='Avg Case Range')
+        
+        ax.errorbar(days + 2, scenarios['best_case']['close'], 
+                   yerr=[[scenarios['best_case']['close'] - scenarios['best_case']['low']],
+                         [scenarios['best_case']['high'] - scenarios['best_case']['close']]],
+                   fmt='o', color='green', capsize=5, label='Best Case Range')
+        
+        ax.errorbar(days + 3, scenarios['worst_case']['close'], 
+                   yerr=[[scenarios['worst_case']['close'] - scenarios['worst_case']['low']],
+                         [scenarios['worst_case']['high'] - scenarios['worst_case']['close']]],
+                   fmt='o', color='red', capsize=5, label='Worst Case Range')
         
         ax.set_xlabel('Days')
         ax.set_ylabel('Price ($)')
-        ax.set_title(f'{symbol} - Price Trend & Predictions')
+        ax.set_title(f'{symbol} - Price Trend & Predicted Ranges')
         ax.legend()
         ax.grid(True, alpha=0.3)
         
@@ -668,23 +716,29 @@ TRADING RECOMMENDATION
         
         self.log(f"Displayed price trend for {symbol}")
     
-    def show_profit_potential(self):
-        """Show profit potential comparison across stocks"""
+    def show_price_range_analysis(self):
+        """Show price range comparison across stocks"""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
         
         symbols = []
-        best_profits = []
-        avg_profits = []
-        worst_profits = []
+        best_highs = []
+        avg_highs = []
+        worst_highs = []
+        best_lows = []
+        avg_lows = []
+        worst_lows = []
         
         for symbol, data in self.stocks.items():
             if data.get('prediction') and 'scenarios' in data['prediction']:
                 symbols.append(symbol)
                 scenarios = data['prediction']['scenarios']
-                best_profits.append(scenarios['best_case']['profit_potential'])
-                avg_profits.append(scenarios['average_case']['profit_potential'])
-                worst_profits.append(scenarios['worst_case']['profit_potential'])
+                best_highs.append(scenarios['best_case']['high'])
+                avg_highs.append(scenarios['average_case']['high'])
+                worst_highs.append(scenarios['worst_case']['high'])
+                best_lows.append(scenarios['best_case']['low'])
+                avg_lows.append(scenarios['average_case']['low'])
+                worst_lows.append(scenarios['worst_case']['low'])
         
         if not symbols:
             messagebox.showinfo("Info", "No prediction data available")
@@ -693,25 +747,28 @@ TRADING RECOMMENDATION
         x = np.arange(len(symbols))
         width = 0.25
         
-        ax.bar(x - width, best_profits, width, label='Best Case', color='green', alpha=0.7)
-        ax.bar(x, avg_profits, width, label='Average Case', color='blue', alpha=0.7)
-        ax.bar(x + width, worst_profits, width, label='Worst Case', color='red', alpha=0.7)
+        # Plot high prices
+        ax.bar(x - width, best_highs, width, label='Best Case High', color='green', alpha=0.7)
+        ax.bar(x, avg_highs, width, label='Average Case High', color='blue', alpha=0.7)
+        ax.bar(x + width, worst_highs, width, label='Worst Case High', color='red', alpha=0.7)
+        
+        # Plot low prices
+        ax.bar(x - width, best_lows, width, label='Best Case Low', color='lightgreen', alpha=0.5, bottom=0)
+        ax.bar(x, avg_lows, width, label='Average Case Low', color='lightblue', alpha=0.5, bottom=0)
+        ax.bar(x + width, worst_lows, width, label='Worst Case Low', color='lightcoral', alpha=0.5, bottom=0)
         
         ax.set_xlabel('Stock Symbol')
-        ax.set_ylabel('Profit Potential (%)')
-        ax.set_title('Profit Potential Comparison Across Stocks')
+        ax.set_ylabel('Price ($)')
+        ax.set_title('Expected Price Ranges Comparison')
         ax.set_xticks(x)
-        ax.set_xticklabels(symbols)
+        ax.set_xticklabels(symbols, rotation=45, ha='right')
         ax.legend()
         ax.grid(True, alpha=0.3)
-        
-        # Add horizontal line at 0%
-        ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
         
         self.fig.tight_layout()
         self.canvas.draw()
         
-        self.log(f"Displayed profit potential for {len(symbols)} stocks")
+        self.log(f"Displayed price range analysis for {len(symbols)} stocks")
     
     def show_welcome_plot(self):
         """Show welcome plot"""
@@ -721,9 +778,9 @@ TRADING RECOMMENDATION
         welcome_text = """MASSIVE Stock Price Predictor
         
 • Add stocks to train prediction models
-• Get Best/Average/Worst case scenarios
-• View detailed trading recommendations
-• Compare profit potential across stocks
+• Get Best/Average/Worst case price ranges
+• View detailed trading insights
+• Compare expected price ranges across stocks
         
 Double-click any stock for detailed analysis"""
         

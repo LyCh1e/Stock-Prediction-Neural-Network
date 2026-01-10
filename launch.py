@@ -29,7 +29,7 @@ def main():
     print()
     print("Features:")
     print("  • Multi-scenario price predictions (Best/Average/Worst)")
-    print("  • Buy/Sell price recommendations")
+    print("  • Expected High/Low price ranges")
     print("  • Profit potential analysis")
     print("  • Market sentiment integration")
     print("  • Technical indicators")

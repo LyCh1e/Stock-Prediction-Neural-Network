@@ -824,20 +824,18 @@ class StockTradingSystem:
         # Calculate adjusted predictions with confidence weighting
         overall_adjustment = (sentiment_strength * 0.6 + rsi_adjustment * 0.4) * sentiment_confidence
         
-        # Best case (optimistic)
+        # Best case (optimistic) - focus on high potential
         best_multiplier = overall_adjustment * (1 + base_variance * 1.5)
         best_scenario = {
             'open': open_pred * best_multiplier,
-            'high': max(high_pred * best_multiplier * 1.02, open_pred * best_multiplier),
-            'low': min(low_pred * (1 - base_variance/2), open_pred * best_multiplier * 0.98),
+            'high': high_pred * best_multiplier * 1.05,  # Higher high
+            'low': low_pred * best_multiplier * 0.98,    # Higher low
             'close': close_pred * best_multiplier,
             'volume': volume_pred * 1.3,
-            'buy_price': low_pred * (1 - base_variance/3),
-            'sell_price': high_pred * best_multiplier * 0.99,  # Sell slightly below high
-            'profit_potential': ((high_pred * best_multiplier * 0.99) - (low_pred * (1 - base_variance/3))) / (low_pred * (1 - base_variance/3)) * 100
+            'profit_potential': ((high_pred * best_multiplier * 1.05) - current_close) / current_close * 100
         }
         
-        # Average case (most likely)
+        # Average case (most likely) - balanced view
         avg_multiplier = overall_adjustment
         avg_scenario = {
             'open': open_pred,
@@ -845,29 +843,24 @@ class StockTradingSystem:
             'low': low_pred,
             'close': close_pred,
             'volume': volume_pred,
-            'buy_price': (open_pred * 0.99 + low_pred) / 2,  # Buy near open/low
-            'sell_price': (high_pred + close_pred * 1.01) / 2,  # Sell near high/close
-            'profit_potential': (((high_pred + close_pred * 1.01) / 2) - ((open_pred * 0.99 + low_pred) / 2)) / ((open_pred * 0.99 + low_pred) / 2) * 100
+            'profit_potential': ((high_pred + close_pred) / 2 - current_close) / current_close * 100
         }
         
-        # Worst case (pessimistic)
+        # Worst case (pessimistic) - focus on downside risk
         worst_multiplier = overall_adjustment * (1 - base_variance * 1.5)
         worst_scenario = {
             'open': open_pred * worst_multiplier,
-            'high': high_pred * (1 - base_variance/2),
-            'low': low_pred * worst_multiplier,
+            'high': high_pred * (1 - base_variance/3),    # Lower high
+            'low': low_pred * worst_multiplier * 0.95,   # Lower low
             'close': close_pred * worst_multiplier,
             'volume': volume_pred * 0.7,
-            'buy_price': open_pred * worst_multiplier * 1.01,  # Buy slightly above open
-            'sell_price': (high_pred * (1 - base_variance/2) * 0.97 + close_pred * worst_multiplier) / 2,
-            'profit_potential': (((high_pred * (1 - base_variance/2) * 0.97 + close_pred * worst_multiplier) / 2) - (open_pred * worst_multiplier * 1.01)) / (open_pred * worst_multiplier * 1.01) * 100
+            'profit_potential': ((high_pred * (1 - base_variance/3)) - current_close) / current_close * 100
         }
         
         # Ensure logical consistency
         for scenario in [best_scenario, avg_scenario, worst_scenario]:
             scenario['high'] = max(scenario['high'], scenario['open'], scenario['low'], scenario['close'])
             scenario['low'] = min(scenario['low'], scenario['open'], scenario['high'], scenario['close'])
-            scenario['sell_price'] = max(scenario['sell_price'], scenario['buy_price'])
             
             # Ensure profit potential is reasonable
             if scenario['profit_potential'] > 100:  # Cap at 100%
