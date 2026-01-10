@@ -34,8 +34,6 @@ python launch.py
    - Watch training progress in real-time
    - View predictions and visualizations!
 
-See [GUI_GUIDE.md](GUI_GUIDE.md) for detailed GUI usage instructions.
-
 ## Setup
 
 1. Install dependencies:
