@@ -5,7 +5,7 @@ import queue
 from datetime import datetime
 import json
 import os
-from stock_volume_predictor import StockTradingSystem, MASSIVEStockFetcher
+from stock_volume_predictor import StockTradingSystem, MassiveAPI  # Changed import
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -191,7 +191,6 @@ class StockPriceGUI:
     
     def toggle_api_visibility(self):
         """Toggle API key visibility"""
-        current = self.api_key_var.get()
         if hasattr(self, '_api_entry'):
             if self._api_entry.cget('show') == '*':
                 self._api_entry.config(show='')
@@ -259,7 +258,7 @@ class StockPriceGUI:
         try:
             stock_data = self.stocks[symbol]
             
-            # Create system
+            # Create system - USING UPDATED CLASS NAME
             system = StockTradingSystem(
                 api_key=self.api_key,
                 lookback_window=stock_data['lookback']
@@ -407,6 +406,11 @@ class StockPriceGUI:
             avg_profit = f"{avg_case['profit_potential']:.1f}%"
             confidence = f"{prediction['confidence']*100:.0f}%"
             sentiment = prediction['market_sentiment'].capitalize()
+            
+            # Add sentiment recommendation if available
+            if 'sentiment_details' in prediction and 'recommendation' in prediction['sentiment_details']:
+                recommendation = prediction['sentiment_details']['recommendation']
+                sentiment = f"{sentiment} ({recommendation})"
         else:
             current_price = '-'
             best_buy = '-'
@@ -445,26 +449,27 @@ class StockPriceGUI:
         
         # Format detailed information
         details = f"""
-{'='*60}
-STOCK DETAILS: {symbol}
-{'='*60}
+{'='*70}
+STOCK ANALYSIS: {symbol}
+{'='*70}
 
 Current Price:      ${prediction['current_price']:.2f}
 Market Sentiment:   {prediction['market_sentiment'].upper()}
 Prediction Date:    {prediction['prediction_date']}
 Confidence Level:   {prediction['confidence']*100:.1f}%
+Data Points:        {prediction['data_points']}
 Last Updated:       {prediction['last_updated']}
 
-{'='*60}
+{'='*70}
 SCENARIO ANALYSIS
-{'='*60}
+{'='*70}
 
 >>> BEST CASE (Optimistic) <<<
   Buy Price:        ${scenarios['best_case']['buy_price']:.2f}
   Sell Price:       ${scenarios['best_case']['sell_price']:.2f}
   Expected High:    ${scenarios['best_case']['high']:.2f}
   Expected Low:     ${scenarios['best_case']['low']:.2f}
-  Profit Potential: {scenarios['best_case']['profit_potential']:.1f}%
+  Profit Potential: {scenarios['best_case']['profit_potential']:+.1f}%
   Volume:           {scenarios['best_case']['volume']:,.0f}
 
 >>> AVERAGE CASE (Most Likely) <<<
@@ -472,7 +477,7 @@ SCENARIO ANALYSIS
   Sell Price:       ${scenarios['average_case']['sell_price']:.2f}
   Expected High:    ${scenarios['average_case']['high']:.2f}
   Expected Low:     ${scenarios['average_case']['low']:.2f}
-  Profit Potential: {scenarios['average_case']['profit_potential']:.1f}%
+  Profit Potential: {scenarios['average_case']['profit_potential']:+.1f}%
   Volume:           {scenarios['average_case']['volume']:,.0f}
 
 >>> WORST CASE (Conservative) <<<
@@ -480,13 +485,19 @@ SCENARIO ANALYSIS
   Sell Price:       ${scenarios['worst_case']['sell_price']:.2f}
   Expected High:    ${scenarios['worst_case']['high']:.2f}
   Expected Low:     ${scenarios['worst_case']['low']:.2f}
-  Profit Potential: {scenarios['worst_case']['profit_potential']:.1f}%
+  Profit Potential: {scenarios['worst_case']['profit_potential']:+.1f}%
   Volume:           {scenarios['worst_case']['volume']:,.0f}
-
-{'='*60}
-TRADING RECOMMENDATION
-{'='*60}
 """
+        
+        # Add sentiment details if available
+        if 'sentiment_details' in prediction:
+            sentiment_info = prediction['sentiment_details']
+            details += f"\n{'='*70}\nMARKET SENTIMENT ANALYSIS\n{'='*70}\n"
+            details += f"Overall Recommendation: {sentiment_info.get('recommendation', 'HOLD')}\n"
+            details += f"Bullish Signals: {sentiment_info.get('bullish_signals', 0)}\n"
+            details += f"Bearish Signals: {sentiment_info.get('bearish_signals', 0)}\n"
+            details += f"RSI: {sentiment_info.get('rsi', 50):.1f}\n"
+            details += f"Sentiment Confidence: {sentiment_info.get('confidence', 0.7)*100:.1f}%\n"
         
         # Add trading recommendation
         avg_profit = scenarios['average_case']['profit_potential']
@@ -501,27 +512,69 @@ TRADING RECOMMENDATION
         else:
             recommendation = "AVOID - Negative profit potential"
         
+        details += f"\n{'='*70}\nTRADING RECOMMENDATION\n{'='*70}\n"
         details += f"\n{recommendation}\n"
         
         # Add technical indicators if available
         if 'technical_indicators' in prediction and prediction['technical_indicators']:
             indicators = prediction['technical_indicators']
-            details += f"\n{'='*60}\nTECHNICAL INDICATORS\n{'='*60}\n"
+            details += f"\n{'='*70}\nTECHNICAL INDICATORS\n{'='*70}\n"
             
-            for key, value in indicators.items():
-                if isinstance(value, float):
-                    details += f"{key.replace('_', ' ').title()}: {value:.2f}\n"
-                else:
-                    details += f"{key.replace('_', ' ').title()}: {value}\n"
+            # Group indicators
+            price_indicators = {k: v for k, v in indicators.items() 
+                              if k in ['sma_20', 'sma_50', 'support', 'resistance', 
+                                     'distance_to_support', 'distance_to_resistance']}
+            
+            momentum_indicators = {k: v for k, v in indicators.items() 
+                                 if k in ['rsi', 'rsi_status', 'macd', 'macd_signal']}
+            
+            volume_indicators = {k: v for k, v in indicators.items() 
+                               if 'volume' in k.lower()}
+            
+            volatility_indicators = {k: v for k, v in indicators.items() 
+                                   if 'volatility' in k.lower()}
+            
+            trend_indicators = {k: v for k, v in indicators.items() 
+                              if 'trend' in k.lower()}
+            
+            if price_indicators:
+                details += f"\nPrice Indicators:\n"
+                for key, value in price_indicators.items():
+                    if isinstance(value, float):
+                        if 'distance' in key:
+                            details += f"  {key.replace('_', ' ').title()}: {value:.1f}%\n"
+                        elif 'support' in key or 'resistance' in key:
+                            details += f"  {key.replace('_', ' ').title()}: ${value:.2f}\n"
+                        else:
+                            details += f"  {key.replace('_', ' ').title()}: {value:.2f}\n"
+                    else:
+                        details += f"  {key.replace('_', ' ').title()}: {value}\n"
+            
+            if momentum_indicators:
+                details += f"\nMomentum Indicators:\n"
+                for key, value in momentum_indicators.items():
+                    if isinstance(value, float):
+                        details += f"  {key.replace('_', ' ').title()}: {value:.2f}\n"
+                    else:
+                        details += f"  {key.replace('_', ' ').title()}: {value}\n"
+            
+            if volume_indicators:
+                details += f"\nVolume Indicators:\n"
+                for key, value in volume_indicators.items():
+                    if isinstance(value, float):
+                        details += f"  {key.replace('_', ' ').title()}: {value:.2f}\n"
+                    else:
+                        details += f"  {key.replace('_', ' ').title()}: {value}\n"
         
         # Update detail text
         self.detail_text.delete(1.0, tk.END)
         self.detail_text.insert(tk.END, details)
         
         # Highlight based on sentiment
-        self.detail_text.tag_configure("positive", foreground="green")
-        self.detail_text.tag_configure("negative", foreground="red")
-        self.detail_text.tag_configure("neutral", foreground="blue")
+        self.detail_text.tag_configure("positive", foreground="green", font=('Courier', 9, 'bold'))
+        self.detail_text.tag_configure("negative", foreground="red", font=('Courier', 9, 'bold'))
+        self.detail_text.tag_configure("neutral", foreground="blue", font=('Courier', 9, 'bold'))
+        self.detail_text.tag_configure("recommendation", foreground="darkorange", font=('Courier', 10, 'bold'))
         
         # Apply tags
         for line in details.split('\n'):
@@ -535,6 +588,16 @@ TRADING RECOMMENDATION
                 if start:
                     end = f"{start}+{len(line)}c"
                     self.detail_text.tag_add("negative", start, end)
+            elif "TRADING RECOMMENDATION" in line:
+                start = self.detail_text.search(line, 1.0)
+                if start:
+                    end = f"{start}+{len(line)}c"
+                    self.detail_text.tag_add("recommendation", start, end)
+            elif recommendation in line:
+                start = self.detail_text.search(line, 1.0)
+                if start:
+                    end = f"{start}+{len(line)}c"
+                    self.detail_text.tag_add("recommendation", start, end)
     
     def show_scenario_comparison(self):
         """Show comparison chart of all scenarios"""
@@ -596,7 +659,7 @@ TRADING RECOMMENDATION
         for bar in bars:
             height = bar.get_height()
             ax2.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}%', ha='center', va='bottom' if height >= 0 else 'top')
+                    f'{height:+.1f}%', ha='center', va='bottom' if height >= 0 else 'top')
         
         # Plot 3: Price Ranges (High-Low)
         for i, data in enumerate(scenario_data):
@@ -611,7 +674,13 @@ TRADING RECOMMENDATION
         ax3.legend()
         ax3.grid(True, alpha=0.3)
         
-        self.fig.suptitle(f'{symbol} Price Prediction Scenarios - Confidence: {prediction["confidence"]*100:.0f}%', fontsize=14)
+        # Add sentiment to title if available
+        sentiment_text = ""
+        if 'sentiment_details' in prediction and 'recommendation' in prediction['sentiment_details']:
+            sentiment_text = f" | Recommendation: {prediction['sentiment_details']['recommendation']}"
+        
+        self.fig.suptitle(f'{symbol} Price Prediction Scenarios - Confidence: {prediction["confidence"]*100:.0f}%{sentiment_text}', 
+                         fontsize=14)
         self.fig.tight_layout()
         self.canvas.draw()
         
@@ -656,6 +725,14 @@ TRADING RECOMMENDATION
         ax.scatter(days, scenarios['best_case']['close'], color='green', s=100, marker='^', label='Best Case Target')
         ax.scatter(days, scenarios['average_case']['close'], color='blue', s=100, marker='o', label='Avg Case Target')
         ax.scatter(days, scenarios['worst_case']['close'], color='red', s=100, marker='v', label='Worst Case Target')
+        
+        # Add support and resistance if available
+        if 'technical_indicators' in prediction:
+            tech = prediction['technical_indicators']
+            if 'support' in tech:
+                ax.axhline(y=tech['support'], color='green', linestyle=':', alpha=0.5, label='Support')
+            if 'resistance' in tech:
+                ax.axhline(y=tech['resistance'], color='red', linestyle=':', alpha=0.5, label='Resistance')
         
         ax.set_xlabel('Days')
         ax.set_ylabel('Price ($)')
@@ -707,6 +784,11 @@ TRADING RECOMMENDATION
         
         # Add horizontal line at 0%
         ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+        
+        # Add value labels for best profits
+        for i, profit in enumerate(best_profits):
+            ax.text(i - width, profit, f'{profit:+.1f}%', 
+                   ha='center', va='bottom' if profit >= 0 else 'top', fontsize=8)
         
         self.fig.tight_layout()
         self.canvas.draw()
@@ -762,18 +844,21 @@ Double-click any stock for detailed analysis"""
         config = {
             'api_key': self.api_key
         }
-        with open('stock_predictor_config.json', 'w') as f:
-            json.dump(config, f)
+        try:
+            with open('stock_predictor_config.json', 'w') as f:
+                json.dump(config, f)
+        except:
+            pass  # Don't crash if can't save config
     
     def load_config(self):
         """Load configuration from file"""
-        if os.path.exists('stock_predictor_config.json'):
-            try:
+        try:
+            if os.path.exists('stock_predictor_config.json'):
                 with open('stock_predictor_config.json', 'r') as f:
                     config = json.load(f)
                     self.api_key = config.get('api_key', '')
-            except:
-                pass
+        except:
+            self.api_key = ""  # Reset if config is corrupted
     
     def process_queue(self):
         """Process messages from background threads"""
