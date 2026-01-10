@@ -105,10 +105,6 @@ The GUI provides an intuitive interface for managing multiple stocks:
 4. **Visualization**: Compare predictions vs actual volumes with interactive charts
 5. **Export**: Save all predictions to JSON for further analysis
 
-### GUI Screenshots & Layout
-
-See [GUI_LAYOUT.md](GUI_LAYOUT.md) for detailed visual layout description.
-
 ### Quick GUI Workflow
 
 ```
