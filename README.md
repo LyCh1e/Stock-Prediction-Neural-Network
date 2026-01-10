@@ -1,11 +1,11 @@
 # Stock Volume Prediction Neural Network
 
-A simple neural network system that fetches stock data from an API and predicts trade volumes with adaptive learning capabilities. Now with a complete GUI for easy multi-stock management!
+A neural network system that fetches stock data from an API and predicts trading volumes with adaptive learning and a complete GUI for multi-stock management.
 
 ## Features
 
 - **Neural Network**: Custom feedforward network with backpropagation
-- **API Integration**: Fetches real stock data from Alpha Vantage API
+- **API Integration**: Fetches real-time stock data from Massive API
 - **Adaptive Learning**: Continuously learns and adapts to new trading trends
 - **Volume Prediction**: Predicts next-day trading volumes based on historical patterns
 - **Model Persistence**: Save and load trained models
@@ -29,7 +29,7 @@ python launch.py
 ```
 
 3. **Get started:**
-   - Enter your Alpha Vantage API key (get free at link in GUI)
+   - Enter your Massive API key (get free at link in GUI)
    - Add stock symbols (AAPL, MSFT, GOOGL, etc.)
    - Watch training progress in real-time
    - View predictions and visualizations!
@@ -43,13 +43,13 @@ See [GUI_GUIDE.md](GUI_GUIDE.md) for detailed GUI usage instructions.
 pip install -r requirements.txt
 ```
 
-2. Get a free API key from Alpha Vantage:
-   - Visit: https://www.alphavantage.co/support/#api-key
-   - Sign up for a free API key (allows 25 requests/day, 500 requests/month)
+2. Get a free API key from Massive:
+   - Visit: https://www.massiveapi.com/signup
+   - Sign up for a free API key (generous rate limits for educational use)
 
 3. Update the API key in the script:
 ```python
-API_KEY = "your_actual_api_key_here"
+API_KEY = "your_actual_massive_api_key_here"
 ```
 
 ## Usage
@@ -60,7 +60,7 @@ API_KEY = "your_actual_api_key_here"
 from stock_volume_predictor import TradingVolumeSystem
 
 # Initialize with your API key
-system = TradingVolumeSystem(api_key="YOUR_API_KEY", lookback_window=10)
+system = TradingVolumeSystem(api_key="YOUR_MASSIVE_API_KEY", lookback_window=10)
 
 # Train on a stock symbol
 system.train_model("AAPL", epochs=150)
@@ -88,7 +88,7 @@ system.adaptive_update("AAPL")
 ### Loading a Saved Model
 
 ```python
-system = TradingVolumeSystem(api_key="YOUR_API_KEY")
+system = TradingVolumeSystem(api_key="YOUR_MASSIVE_API_KEY")
 system.model.load_model('my_model.pkl')
 
 # Continue making predictions
@@ -145,7 +145,7 @@ For comprehensive GUI documentation, see [GUI_GUIDE.md](GUI_GUIDE.md).
 
 ## How It Works
 
-1. **Data Fetching**: Uses Alpha Vantage API to get historical daily stock data
+1. **Data Fetching**: Uses Massive API to get historical daily stock data
 2. **Feature Engineering**: Creates sequences of historical volumes (default: 10 days)
 3. **Normalization**: Normalizes data for better neural network performance
 4. **Training**: Uses gradient descent with adaptive learning rate
@@ -180,7 +180,7 @@ Input Layer (10 neurons) → Hidden Layer (20 neurons, ReLU) → Output (1 neuro
 
 ```
 Training model on AAPL...
-Fetched 100 days of data
+Fetched 100 days of data from Massive API
 Training on 90 sequences
 Epoch 0, Loss: 0.234567
 Epoch 20, Loss: 0.098765
@@ -196,7 +196,7 @@ Recent Average Volume: 49,876,543 shares
 
 ## Limitations
 
-- **API Rate Limits**: Free tier has daily/monthly limits
+- **API Rate Limits**: Check Massive API's current rate limits for your plan
 - **Simple Architecture**: This is a basic network for demonstration
 - **Market Complexity**: Real trading involves many more factors
 - **No Financial Advice**: This is for educational purposes only
@@ -210,6 +210,15 @@ You can enhance this system by:
 3. Incorporating multiple stocks for cross-learning
 4. Adding ensemble methods
 5. Implementing more sophisticated normalization
+6. Integrating additional data sources alongside Massive API
+
+## API Information
+
+This project uses the **Massive API** for stock data:
+- **Website**: https://www.massiveapi.com
+- **Documentation**: https://docs.massiveapi.com
+- **Free Tier**: Available for educational and personal projects
+- **Data Coverage**: Global stock markets with historical data
 
 ## Disclaimer
 
