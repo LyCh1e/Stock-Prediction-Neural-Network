@@ -135,8 +135,6 @@ The GUI provides an intuitive interface for managing multiple stocks:
 | Show Comparison | Bar chart of predicted vs actual |
 | Show Training Loss | Line chart of training progress |
 
-For comprehensive GUI documentation, see [GUI_GUIDE.md](GUI_GUIDE.md).
-
 ## How It Works
 
 1. **Data Fetching**: Uses Massive API to get historical daily stock data
