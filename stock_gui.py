@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import os
 from stock_volume_predictor import StockTradingSystem, MassiveAPI
+from stock_auto_updater import StockAutoUpdater
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
