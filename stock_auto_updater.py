@@ -412,7 +412,7 @@ class StockAutoUpdater:
         except Exception as e:
             print(f"Error loading cache: {str(e)}")
     
-    def export_historical_data(self, symbol: str = "", filename: str = "") -> str:
+    def export_historical_data(self, symbol: str = '', filename: str = '') -> str:
         """
         Export historical prediction data to a separate file.
         

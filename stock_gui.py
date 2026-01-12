@@ -407,7 +407,6 @@ class StockPriceGUI:
             expected_low = f"${avg_case['low']:.2f}"
             avg_profit = f"{avg_case['profit_potential']:.1f}%"
             confidence = f"{prediction['confidence']*100:.0f}%"
-            sentiment = prediction['market_sentiment'].capitalize()
         else:
             current_price = '-'
             expected_high = '-'
@@ -423,7 +422,6 @@ class StockPriceGUI:
             expected_low,
             avg_profit,
             confidence,
-            sentiment,
             stock_data['status']
         ))
     

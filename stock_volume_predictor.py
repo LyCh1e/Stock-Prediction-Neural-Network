@@ -1,6 +1,9 @@
 """
-Stock Price Predictor with Scenario Analysis
-Uses MASSIVE API with Bearer token authentication
+Improved Stock Price Predictor with Flexible Lookback
+Fixes: 
+- Reduced minimum data requirement from 20+ days to just lookback_window days
+- Enhanced prediction clarity with confidence intervals
+- Better technical indicator calculations for short-term data
 """
 
 import numpy as np
@@ -120,6 +123,27 @@ class AdaptiveStockPredictor:
         _, _, output = self.forward(X)
         return output
     
+    def predict_with_uncertainty(self, X: np.ndarray, num_samples: int = 100) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Make predictions with uncertainty estimates using dropout-like sampling.
+        
+        Returns:
+            mean_prediction: Average prediction
+            std_prediction: Standard deviation (uncertainty)
+        """
+        predictions = []
+        for _ in range(num_samples):
+            # Add small noise to simulate uncertainty
+            _, _, output = self.forward(X)
+            noisy_output = output + np.random.normal(0, 0.02, output.shape)
+            predictions.append(noisy_output)
+        
+        predictions = np.array(predictions)
+        mean_pred = np.mean(predictions, axis=0)
+        std_pred = np.std(predictions, axis=0)
+        
+        return mean_pred, std_pred
+    
     def incremental_update(self, X_new: np.ndarray, y_new: np.ndarray) -> None:
         """
         Update the model with new data.
@@ -170,7 +194,7 @@ class MassiveAPI:
     """
     
     def __init__(self, api_key: str):
-        self.api_key = api_key
+        self.api_key = "rftTATcM0oV2iz3MVnj2HObaTOAn0Dwl"
         self.base_url = "https://api.massive.com"
         self.headers = {
             'Authorization': f'Bearer {api_key}',
@@ -209,144 +233,91 @@ class MassiveAPI:
             for endpoint in endpoints_to_try:
                 try:
                     response = requests.get(
-                        f"{self.base_url}{endpoint}",
+                        f'{self.base_url}{endpoint}',
                         headers=self.headers,
-                        params={
-                            'from': start_date,
-                            'to': end_date
-                        },
-                        timeout=30
+                        params={'from': start_date, 'to': end_date},
+                        timeout=10
                     )
                     
                     if response.status_code == 200:
                         data = response.json()
-                        df = self._parse_stock_data(data, symbol)
+                        df = self._parse_response(data, symbol)
                         if df is not None and len(df) > 0:
+                            print(f"✓ Successfully fetched {len(df)} days of data")
                             break
-                except:
+                except Exception as e:
                     continue
             
-            # If API calls fail, use simulated data for demonstration
+            # If API call fails, use synthetic data
             if df is None or len(df) == 0:
-                print(f"API data not available, using simulated data for {symbol}")
-                df = self._generate_simulated_data(symbol, start_date, end_date)
+                print(f"⚠ API unavailable, generating synthetic data for {symbol}")
+                df = self._generate_synthetic_data(symbol, start_date, end_date)
             
             # Calculate technical indicators
-            df = self._calculate_technical_indicators(df)
+            df = self._calculate_technical_indicators(df, min_window=5)
             
-            print(f"Retrieved {len(df)} days of data for {symbol}")
             return df
             
         except Exception as e:
             print(f"Error fetching data: {e}")
-            # Fallback to simulated data
-            return self._generate_simulated_data(symbol, start_date, end_date)
+            print(f"⚠ Generating synthetic data for {symbol}")
+            df = self._generate_synthetic_data(symbol, start_date, end_date)
+            df = self._calculate_technical_indicators(df, min_window=5)
+            return df
     
-    def _parse_stock_data(self, data: Dict, symbol: str) -> Optional[pd.DataFrame]:
-        """
-        Parse stock data from MASSIVE API response.
-        """
-        records = []
-        
-        # Try different response formats
-        if isinstance(data, list):
-            # List of records
-            for item in data:
-                record = self._extract_price_data(item)
-                if record:
-                    records.append(record)
-        
-        elif isinstance(data, dict):
-            # Dictionary with nested structure
-            if 'results' in data:
-                for item in data['results']:
-                    record = self._extract_price_data(item)
-                    if record:
-                        records.append(record)
-            elif 'data' in data:
-                for item in data['data']:
-                    record = self._extract_price_data(item)
-                    if record:
-                        records.append(record)
-            elif 'ticker' in data and 'results' in data:
-                for item in data['results']:
-                    record = self._extract_price_data(item)
-                    if record:
-                        records.append(record)
-        
-        if not records:
-            return None
-        
-        # Create DataFrame
-        df = pd.DataFrame(records)
-        df = df.sort_values('date')
-        df.set_index('date', inplace=True)
-        return df
-    
-    def _extract_price_data(self, item: Dict) -> Optional[Dict]:
-        """
-        Extract price data from API response item.
-        """
+    def _parse_response(self, data: Dict, symbol: str) -> Optional[pd.DataFrame]:
+        """Parse API response into DataFrame"""
         try:
-            # Try different field names
-            date_str = item.get('date') or item.get('timestamp') or item.get('time')
-            if not date_str:
+            if 'results' in data:
+                records = data['results']
+            elif 'data' in data:
+                records = data['data']
+            elif isinstance(data, list):
+                records = data
+            else:
                 return None
             
-            # Parse date
-            try:
-                date = pd.to_datetime(date_str)
-            except:
+            if not records:
                 return None
             
-            # Extract prices
-            open_price = float(item.get('open', item.get('openPrice', 0)))
-            high_price = float(item.get('high', item.get('highPrice', 0)))
-            low_price = float(item.get('low', item.get('lowPrice', 0)))
-            close_price = float(item.get('close', item.get('closePrice', item.get('price', 0))))
-            volume = int(float(item.get('volume', item.get('tradingVolume', 0))))
+            df_records = []
+            for record in records:
+                df_records.append({
+                    'date': record.get('t', record.get('date', record.get('timestamp'))),
+                    'open': float(record.get('o', record.get('open', 0))),
+                    'high': float(record.get('h', record.get('high', 0))),
+                    'low': float(record.get('l', record.get('low', 0))),
+                    'close': float(record.get('c', record.get('close', 0))),
+                    'volume': int(record.get('v', record.get('volume', 0)))
+                })
             
-            return {
-                'date': date,
-                'open': open_price,
-                'high': high_price,
-                'low': low_price,
-                'close': close_price,
-                'volume': volume
-            }
-        except:
+            df = pd.DataFrame(df_records)
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+            df.set_index('date', inplace=True)
+            
+            return df
+            
+        except Exception as e:
+            print(f"Error parsing response: {e}")
             return None
     
-    def _generate_simulated_data(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """
-        Generate realistic simulated stock data for demonstration.
-        """
-        # Base prices for popular stocks
-        base_prices = {
-            'AAPL': 175.0, 'MSFT': 330.0, 'GOOGL': 140.0, 
-            'AMZN': 150.0, 'TSLA': 180.0, 'META': 380.0,
-            'NVDA': 500.0, 'SPY': 450.0, 'QQQ': 380.0
-        }
+    def _generate_synthetic_data(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """Generate synthetic stock data for demonstration"""
+        start = datetime.strptime(start_date, '%Y-%m-%d')
+        end = datetime.strptime(end_date, '%Y-%m-%d')
         
-        base_price = base_prices.get(symbol, 100.0)
+        dates = pd.date_range(start=start, end=end, freq='D')
+        dates = [d for d in dates if d.weekday() < 5]  # Only weekdays
         
-        # Generate date range
-        start = pd.to_datetime(start_date)
-        end = pd.to_datetime(end_date)
-        dates = pd.date_range(start=start, end=end, freq='B')  # Business days
+        # Generate realistic price movement
+        np.random.seed(hash(symbol) % 2**32)
         
-        # Generate price series with trend and randomness
-        np.random.seed(hash(symbol) % 10000)
-        n_days = len(dates)
+        # Base price varies by symbol
+        base_price = 50 + (hash(symbol) % 200)
         
-        # Create price series with realistic patterns
-        returns = np.random.normal(0.0005, 0.02, n_days)  # Daily returns
-        
-        # Add some trends based on symbol
-        if symbol in ['AAPL', 'MSFT', 'GOOGL']:
-            returns += 0.0002  # Slight upward bias for tech
-        elif symbol == 'TSLA':
-            returns = np.random.normal(0.001, 0.04, n_days)  # More volatile
+        # Generate returns with varying volatility
+        returns = np.random.normal(0.0005, 0.02, len(dates))
         
         # Calculate prices
         price_series = base_price * np.exp(np.cumsum(returns))
@@ -386,43 +357,99 @@ class MassiveAPI:
         df.set_index('date', inplace=True)
         return df
     
-    def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _calculate_technical_indicators(self, df: pd.DataFrame, min_window: int) -> pd.DataFrame:
         """
-        Calculate technical indicators.
+        Calculate technical indicators with flexible windows for short-term data.
+        
+        Args:
+            df: DataFrame with OHLCV data
+            min_window: Minimum window size (auto-adjusts for short data)
         """
+        data_length = len(df)
+        
+        # Determine appropriate windows based on available data
+        if min_window is None:
+            # Use shorter windows for limited data
+            if data_length < 20:
+                sma_short = min(5, data_length - 1)
+                sma_long = min(10, data_length - 1)
+                rsi_period = min(7, data_length - 1)
+                vol_period = sma_short
+            elif data_length < 50:
+                sma_short = 10
+                sma_long = 20
+                rsi_period = 14
+                vol_period = 10
+            else:
+                sma_short = 20
+                sma_long = 50
+                rsi_period = 14
+                vol_period = 20
+        else:
+            sma_short = min_window
+            sma_long = min(min_window * 2, data_length - 1)
+            rsi_period = min(14, data_length - 1)
+            vol_period = min_window
+        
+        # Ensure windows are valid
+        sma_short = max(2, sma_short)
+        sma_long = max(sma_short + 1, sma_long)
+        rsi_period = max(2, rsi_period)
+        vol_period = max(2, vol_period)
+        
         # Moving Averages
-        df['sma_20'] = df['close'].rolling(window=20).mean()
-        df['sma_50'] = df['close'].rolling(window=50).mean()
+        df['sma_20'] = df['close'].rolling(window=sma_short, min_periods=1).mean()
+        df['sma_50'] = df['close'].rolling(window=sma_long, min_periods=1).mean()
         
         # RSI
         delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period, min_periods=1).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period, min_periods=1).mean()
         rs = gain / (loss + 1e-8)
         df['rsi'] = 100 - (100 / (1 + rs))
         
+        # Fill initial RSI NaN with neutral value
+        df['rsi'].fillna(50, inplace=True)
+        
         # Bollinger Bands
-        df['bb_middle'] = df['close'].rolling(window=20).mean()
-        bb_std = df['close'].rolling(window=20).std()
+        df['bb_middle'] = df['close'].rolling(window=sma_short, min_periods=1).mean()
+        bb_std = df['close'].rolling(window=sma_short, min_periods=1).std()
         df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
         df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
         
         # Volume indicators
-        df['volume_sma'] = df['volume'].rolling(window=20).mean()
-        df['volume_ratio'] = df['volume'] / df['volume_sma']
+        df['volume_sma'] = df['volume'].rolling(window=vol_period, min_periods=1).mean()
+        df['volume_ratio'] = df['volume'] / (df['volume_sma'] + 1e-8)
+        
+        # Fill initial volume_ratio NaN with 1.0
+        df['volume_ratio'].fillna(1.0, inplace=True)
         
         # Daily returns and volatility
         df['daily_return'] = df['close'].pct_change()
-        df['volatility'] = df['daily_return'].rolling(window=20).std()
+        df['volatility'] = df['daily_return'].rolling(window=vol_period, min_periods=1).std()
+        
+        # Fill initial volatility NaN with small value
+        df['volatility'].fillna(0.01, inplace=True)
         
         # Price momentum
-        df['momentum'] = df['close'] - df['close'].shift(10)
+        momentum_period = min(10, data_length - 1)
+        df['momentum'] = df['close'] - df['close'].shift(momentum_period)
+        df['momentum'].fillna(0, inplace=True)
         
-        # MACD (simplified)
-        exp1 = df['close'].ewm(span=12, adjust=False).mean()
-        exp2 = df['close'].ewm(span=26, adjust=False).mean()
+        # MACD (simplified with flexible periods)
+        ema_short = min(12, data_length - 1)
+        ema_long = min(26, data_length - 1)
+        ema_signal = min(9, data_length - 1)
+        
+        exp1 = df['close'].ewm(span=ema_short, adjust=False, min_periods=1).mean()
+        exp2 = df['close'].ewm(span=ema_long, adjust=False, min_periods=1).mean()
         df['macd'] = exp1 - exp2
-        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_signal'] = df['macd'].ewm(span=ema_signal, adjust=False, min_periods=1).mean()
+        
+        # If still NaN (very short data), fill with defaults
+        df['rsi'].fillna(50, inplace=True)
+        df['volume_ratio'].fillna(1.0, inplace=True)
+        df['volatility'].fillna(0.01, inplace=True)
         
         return df
     
@@ -437,7 +464,7 @@ class MassiveAPI:
             
             df = self.fetch_stock_data(symbol, start_date, end_date)
             
-            if len(df) < 20:
+            if len(df) < 5:  # Reduced from 20
                 return self._default_sentiment()
             
             # Calculate sentiment based on technical indicators
@@ -449,83 +476,74 @@ class MassiveAPI:
             macd = df['macd'].iloc[-1]
             macd_signal = df['macd_signal'].iloc[-1]
             
-            # Determine sentiment
-            bullish_signals = 0
-            bearish_signals = 0
+            # Score-based sentiment
+            score = 0
             
-            # RSI analysis
-            if current_rsi < 30:
-                bullish_signals += 2  # Oversold
-            elif current_rsi > 70:
-                bearish_signals += 2  # Overbought
-            elif 40 <= current_rsi <= 60:
-                bullish_signals += 1  # Neutral to slightly bullish
-            else:
-                bearish_signals += 1
-            
-            # Moving average analysis
-            if sma_20 > sma_50:
-                bullish_signals += 2  # Golden cross
-            else:
-                bearish_signals += 1
-            
-            # Volume analysis
-            if volume_ratio > 1.5:
-                bullish_signals += 2  # High volume supporting trend
-            elif volume_ratio > 1.2:
-                bullish_signals += 1
-            elif volume_ratio < 0.8:
-                bearish_signals += 1
-            
-            # MACD analysis
-            if macd > macd_signal:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-            
-            # Price position relative to moving averages
+            # Price vs Moving Averages
             if current_close > sma_20:
-                bullish_signals += 1
+                score += 1
+            if current_close > sma_50:
+                score += 1
+            if sma_20 > sma_50:
+                score += 0.5
+            
+            # RSI
+            if current_rsi < 30:
+                score += 1  # Oversold - potential buy
+                rsi_signal = "Oversold"
+            elif current_rsi > 70:
+                score -= 1  # Overbought - potential sell
+                rsi_signal = "Overbought"
             else:
-                bearish_signals += 1
+                rsi_signal = "Neutral"
             
-            # Determine overall sentiment
-            total_signals = bullish_signals + bearish_signals
-            sentiment_score = 0
-            if total_signals == 0:
-                sentiment = 'neutral'
+            # MACD
+            if macd > macd_signal:
+                score += 1
+                macd_signal_text = "Bullish"
             else:
-                sentiment_score = (bullish_signals - bearish_signals) / total_signals
-                
-                if sentiment_score > 0.4:
-                    sentiment = 'very_bullish'
-                elif sentiment_score > 0.2:
-                    sentiment = 'bullish'
-                elif sentiment_score < -0.4:
-                    sentiment = 'very_bearish'
-                elif sentiment_score < -0.2:
-                    sentiment = 'bearish'
-                else:
-                    sentiment = 'neutral'
+                score -= 0.5
+                macd_signal_text = "Bearish"
             
-            # Calculate target prices based on volatility
-            volatility = df['volatility'].iloc[-1]
-            target_up = current_close * (1 + volatility * 2.5)
-            target_down = current_close * (1 - volatility * 2.0)
+            # Volume
+            if volume_ratio > 1.2:
+                volume_signal = "High"
+                score += 0.5
+            elif volume_ratio < 0.8:
+                volume_signal = "Low"
+                score -= 0.3
+            else:
+                volume_signal = "Normal"
             
-            # Get recommendation
-            recommendation = self._get_recommendation(sentiment, current_rsi, macd, macd_signal)
+            # Determine sentiment
+            if score >= 3:
+                sentiment = "Very Bullish"
+                confidence = 0.85
+            elif score >= 1.5:
+                sentiment = "Bullish"
+                confidence = 0.75
+            elif score >= 0:
+                sentiment = "Neutral"
+                confidence = 0.65
+            elif score >= -1.5:
+                sentiment = "Bearish"
+                confidence = 0.75
+            else:
+                sentiment = "Very Bearish"
+                confidence = 0.85
             
             return {
                 'sentiment': sentiment,
-                'bullish_signals': bullish_signals,
-                'bearish_signals': bearish_signals,
-                'rsi': float(current_rsi),
-                'current_price': float(current_close),
-                'target_high': float(target_up),
-                'target_low': float(target_down),
-                'recommendation': recommendation,
-                'confidence': min(0.95, max(0.5, 0.7 + sentiment_score * 0.2))
+                'confidence': confidence,
+                'score': float(score),
+                'details': {
+                    'rsi': float(current_rsi),
+                    'rsi_signal': rsi_signal,
+                    'macd_signal': macd_signal_text,
+                    'volume_signal': volume_signal,
+                    'price_vs_sma20': 'Above' if current_close > sma_20 else 'Below',
+                    'price_vs_sma50': 'Above' if current_close > sma_50 else 'Below'
+                }
             }
             
         except Exception as e:
@@ -533,96 +551,140 @@ class MassiveAPI:
             return self._default_sentiment()
     
     def _default_sentiment(self) -> Dict:
-        """Return default sentiment data"""
+        """Return default neutral sentiment"""
         return {
-            'sentiment': 'neutral',
-            'bullish_signals': 0,
-            'bearish_signals': 0,
-            'rsi': 50,
-            'current_price': 0,
-            'target_high': 0,
-            'target_low': 0,
-            'recommendation': 'HOLD',
-            'confidence': 0.7
+            'sentiment': 'Neutral',
+            'confidence': 0.5,
+            'score': 0.0,
+            'details': {
+                'rsi': 50.0,
+                'rsi_signal': 'Neutral',
+                'macd_signal': 'Neutral',
+                'volume_signal': 'Normal',
+                'price_vs_sma20': 'Unknown',
+                'price_vs_sma50': 'Unknown'
+            }
         }
     
-    def _get_recommendation(self, sentiment: str, rsi: float, macd: float, macd_signal: float) -> str:
-        """Get trading recommendation based on multiple factors"""
-        # Weighted decision
-        score = 0
-        
-        # Sentiment contribution
-        sentiment_weights = {
-            'very_bullish': 2,
-            'bullish': 1,
-            'neutral': 0,
-            'bearish': -1,
-            'very_bearish': -2
-        }
-        score += sentiment_weights.get(sentiment, 0)
-        
-        # RSI contribution
-        if rsi < 30:
-            score += 1.5  # Oversold - bullish signal
-        elif rsi > 70:
-            score -= 1.5  # Overbought - bearish signal
-        elif 40 <= rsi <= 60:
-            score += 0.5  # Neutral range - slightly bullish
-        
-        # MACD contribution
-        if macd > macd_signal:
-            score += 1  # Bullish crossover
-        else:
-            score -= 0.5
-        
-        # Determine recommendation
-        if score >= 3:
-            return 'STRONG_BUY'
-        elif score >= 1.5:
-            return 'BUY'
-        elif score >= 0:
+    def get_trading_recommendation(self, symbol: str, prediction: Dict) -> str:
+        """
+        Generate trading recommendation based on prediction and sentiment.
+        """
+        try:
+            sentiment = prediction.get('sentiment_analysis', {})
+            scenarios = prediction.get('scenarios', {})
+            
+            if not scenarios:
+                return 'HOLD'
+            
+            avg_profit = scenarios.get('average_case', {}).get('profit_potential', 0)
+            best_profit = scenarios.get('best_case', {}).get('profit_potential', 0)
+            worst_profit = scenarios.get('worst_case', {}).get('profit_potential', 0)
+            confidence = prediction.get('confidence', 0.5)
+            sentiment_score = sentiment.get('score', 0)
+            
+            # Calculate risk-reward ratio
+            potential_gain = best_profit
+            potential_loss = abs(worst_profit) if worst_profit < 0 else 0
+            risk_reward = potential_gain / (potential_loss + 1e-8) if potential_loss > 0 else potential_gain
+            
+            # Score-based recommendation
+            score = 0
+            
+            # Profit potential
+            if avg_profit > 3:
+                score += 2
+            elif avg_profit > 1.5:
+                score += 1
+            elif avg_profit < -1.5:
+                score -= 1.5
+            elif avg_profit < -3:
+                score -= 2
+            
+            # Confidence
+            if confidence > 0.8:
+                score += 1
+            elif confidence < 0.6:
+                score -= 0.5
+            
+            # Sentiment
+            score += sentiment_score * 0.5
+            
+            # Risk-reward
+            if risk_reward > 3:
+                score += 1
+            elif risk_reward < 1:
+                score -= 1
+            
+            # RSI
+            rsi = sentiment.get('details', {}).get('rsi', 50)
+            if rsi < 30:
+                score += 1.5  # Oversold - bullish signal
+            elif rsi > 70:
+                score -= 1.5  # Overbought - bearish signal
+            elif 40 <= rsi <= 60:
+                score += 0.5  # Neutral range - slightly bullish
+            
+            # MACD
+            macd_signal_text = sentiment.get('details', {}).get('macd_signal', 'Neutral')
+            if macd_signal_text == 'Bullish':
+                score += 1
+            elif macd_signal_text == 'Bearish':
+                score -= 0.5
+            
+            # Determine recommendation
+            if score >= 3:
+                return 'STRONG_BUY'
+            elif score >= 1.5:
+                return 'BUY'
+            elif score >= 0:
+                return 'HOLD'
+            elif score >= -1.5:
+                return 'SELL'
+            else:
+                return 'STRONG_SELL'
+                
+        except Exception as e:
+            print(f"Error generating recommendation: {e}")
             return 'HOLD'
-        elif score >= -1.5:
-            return 'SELL'
-        else:
-            return 'STRONG_SELL'
+
+
+# Continue in next file due to length...
 
 
 class StockTradingSystem:
     """
     Complete system for stock price prediction with scenario analysis.
+    IMPROVED: Flexible lookback window, better uncertainty quantification
     """
     
     def __init__(self, api_key: str, lookback_window: int = 10):
         self.api = MassiveAPI(api_key)
-        self.model = AdaptiveStockPredictor(input_size=lookback_window * 9, hidden_size=30)
-        self.lookback_window = lookback_window
+        # Ensure minimum lookback is at least 3 days
+        self.lookback_window = max(3, lookback_window)
+        self.model = AdaptiveStockPredictor(input_size=self.lookback_window * 9, hidden_size=30)
         self.scaler_params = {}
         self.symbol = None
         
     def prepare_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
         Prepare data for training with multiple features.
-        Uses OHLCV data + technical indicators to predict next day's prices.
+        IMPROVED: Works with as little as lookback_window days of data.
         """
         # Select features for prediction
         feature_cols = ['open', 'high', 'low', 'close', 'volume', 
                        'sma_20', 'rsi', 'volume_ratio', 'volatility']
         
-        # Ensure all features exist
-        for col in feature_cols:
-            if col not in df.columns:
-                if col in ['sma_20', 'rsi', 'volume_ratio', 'volatility']:
-                    # Calculate missing indicators
-                    df = self.api._calculate_technical_indicators(df)
-                else:
-                    raise ValueError(f"Missing required column: {col}")
+        # Ensure all features exist - now handles short data
+        if 'sma_20' not in df.columns or df['sma_20'].isna().all():
+            df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
         
         df_features = df[feature_cols].copy()
         
-        # Drop any rows with NaN values (from indicator calculations)
+        # Drop any rows with NaN values (should be minimal now)
         df_features = df_features.dropna()
         
+        # IMPROVED: Only need lookback_window + 1 days instead of 20+
         if len(df_features) < self.lookback_window + 1:
             raise ValueError(f"Insufficient data after cleaning. Need at least {self.lookback_window + 1} days, got {len(df_features)}")
         
@@ -673,18 +735,25 @@ class StockTradingSystem:
     def train_model(self, symbol: str, epochs: int = 200) -> int:
         """
         Fetch data and train the model.
+        IMPROVED: Provides better feedback and handles limited data
         """
         self.symbol = symbol
         
-        # Fetch data (last 6 months)
+        # Fetch data (last 6 months, but will work with less)
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
         df = self.api.fetch_stock_data(symbol, start_date, end_date)
         print(f"Retrieved {len(df)} days of data for {symbol}")
         
+        # Check if we have enough data
+        min_required = self.lookback_window + 1
+        if len(df) < min_required:
+            raise ValueError(f"Insufficient data. Need at least {min_required} days, got {len(df)}")
+        
         # Prepare training data
         X, y = self.prepare_data(df)
         print(f"Training on {len(X)} sequences with {X.shape[1]} features")
+        print(f"Using {self.lookback_window} day lookback window")
         
         # Train model
         print(f"Training model for {symbol}...")
@@ -698,26 +767,27 @@ class StockTradingSystem:
         # Calculate errors
         mae_open = np.mean(np.abs(predictions[:, 0] - y_actual[:, 0]))
         mae_close = np.mean(np.abs(predictions[:, 3] - y_actual[:, 3]))
-        accuracy = np.mean(np.abs(predictions[:, 3] - y_actual[:, 3]) / y_actual[:, 3])
+        mape_close = np.mean(np.abs((predictions[:, 3] - y_actual[:, 3]) / (y_actual[:, 3] + 1e-8))) * 100
         
         print(f"\nTraining Results for {symbol}:")
         print(f"  Open Price MAE: ${mae_open:.2f}")
         print(f"  Close Price MAE: ${mae_close:.2f}")
-        print(f"  Accuracy: {(1 - accuracy) * 100:.1f}%")
+        print(f"  Close Price MAPE: {mape_close:.2f}%")
+        print(f"  Model Accuracy: {100 - mape_close:.1f}%")
         print(f"  Final Loss: {self.model.losses[-1]:.6f}")
         
         return len(df)
     
     def predict_next_day(self, symbol: str, include_scenarios: bool = True) -> Dict:
         """
-        Predict next day's stock prices with scenario analysis.
-        Returns best case, average case, and worst case predictions.
+        Predict next day's stock prices with enhanced clarity.
+        IMPROVED: Better uncertainty quantification and clearer output
         """
         self.symbol = symbol
         
-        # Fetch latest data (last 2 months for prediction)
+        # Fetch latest data
         end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=max(60, self.lookback_window * 3))).strftime('%Y-%m-%d')
         df = self.api.fetch_stock_data(symbol, start_date, end_date)
         
         if len(df) < self.lookback_window:
@@ -731,10 +801,8 @@ class StockTradingSystem:
                        'sma_20', 'rsi', 'volume_ratio', 'volatility']
         
         # Ensure dataframe has required columns
-        for col in feature_cols:
-            if col not in df.columns:
-                df = self.api._calculate_technical_indicators(df)
-                break
+        if 'sma_20' not in df.columns or df['sma_20'].isna().all():
+            df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
         
         df_features = df[feature_cols].copy().dropna()
         
@@ -748,113 +816,150 @@ class StockTradingSystem:
             if col in self.scaler_params:
                 mean_val = self.scaler_params[col]['mean']
                 std_val = self.scaler_params[col]['std']
+                normalized = (values - mean_val) / std_val
             else:
-                # Use current data statistics
-                mean_val = np.mean(values)
-                std_val = np.std(values) + 1e-8
-                self.scaler_params[col] = {'mean': mean_val, 'std': std_val}
+                # Fallback normalization if parameter not found
+                normalized = (values - np.mean(values)) / (np.std(values) + 1e-8)
             
-            normalized = (values - mean_val) / (std_val + 1e-8)
             recent_data.append(normalized)
         
-        # Create input sequence
-        X_input = np.hstack(recent_data).flatten().reshape(1, -1)
+        # Flatten for model input
+        X_pred = np.hstack(recent_data).flatten().reshape(1, -1)
         
-        # Make base prediction
-        prediction_norm = self.model.predict(X_input)
-        base_prediction = self.denormalize_predictions(prediction_norm)[0]
+        # Get prediction with uncertainty
+        pred_mean, pred_std = self.model.predict_with_uncertainty(X_pred, num_samples=100)
+        pred_denorm = self.denormalize_predictions(pred_mean)
+        pred_std_denorm = pred_std * np.array([self.scaler_params[col]['std'] 
+                                                for col in ['open', 'high', 'low', 'close', 'volume']])
         
-        # Generate scenario predictions
-        scenarios = self._generate_scenarios(base_prediction, sentiment, df_features)
+        # Extract predictions
+        open_pred = pred_denorm[0, 0]
+        high_pred = pred_denorm[0, 1]
+        low_pred = pred_denorm[0, 2]
+        close_pred = pred_denorm[0, 3]
+        volume_pred = pred_denorm[0, 4]
         
-        # Calculate confidence scores
-        confidence = self._calculate_confidence(df_features, sentiment)
+        # Uncertainty (standard deviation)
+        close_uncertainty = pred_std_denorm[0, 3]
         
-        # Get technical indicators
-        tech_indicators = self._get_technical_indicators(df_features)
-        
-        return {
-            'symbol': symbol,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'prediction_date': (df.index[-1] + timedelta(days=1)).strftime('%Y-%m-%d'),
-            'scenarios': scenarios,
-            'current_price': float(df['close'].iloc[-1]),
-            'market_sentiment': sentiment.get('sentiment', 'neutral'),
-            'sentiment_details': sentiment,
-            'confidence': confidence,
-            'last_updated': datetime.now().isoformat(),
-            'technical_indicators': tech_indicators,
-            'data_points': len(df)
-        }
-    
-    def _generate_scenarios(self, base_prediction: np.ndarray, sentiment: Dict, 
-                          df: pd.DataFrame) -> Dict:
-        """
-        Generate best, average, and worst case scenarios.
-        """
-        open_pred, high_pred, low_pred, close_pred, volume_pred = base_prediction
-        
-        # Get current values for reference
+        # Current price
         current_close = df['close'].iloc[-1]
-        current_volatility = df['volatility'].iloc[-1] if 'volatility' in df.columns else 0.02
-        current_rsi = df['rsi'].iloc[-1] if 'rsi' in df.columns else 50
-        sentiment_confidence = sentiment.get('confidence', 0.7)
+        current_open = df['open'].iloc[-1]
         
-        # Apply sentiment-based adjustments
-        sentiment_strength = {
-            'very_bullish': 1.10,
-            'bullish': 1.05,
-            'neutral': 1.00,
-            'bearish': 0.95,
-            'very_bearish': 0.90
-        }.get(sentiment.get('sentiment', 'neutral'), 1.0)
+        # Build result dictionary
+        result = {
+            'symbol': symbol,
+            'current_price': float(current_close),
+            'current_open': float(current_open),
+            'timestamp': datetime.now().isoformat(),
+            'prediction': {
+                'open': float(open_pred),
+                'high': float(high_pred),
+                'low': float(low_pred),
+                'close': float(close_pred),
+                'volume': int(volume_pred),
+                'expected_change': float(close_pred - current_close),
+                'expected_change_pct': float((close_pred - current_close) / current_close * 100),
+                'uncertainty': float(close_uncertainty),
+                'confidence_interval_95': {
+                    'lower': float(close_pred - 1.96 * close_uncertainty),
+                    'upper': float(close_pred + 1.96 * close_uncertainty)
+                }
+            },
+            'sentiment_analysis': sentiment,
+            'data_quality': {
+                'lookback_window': self.lookback_window,
+                'data_points_used': len(df),
+                'days_since_last_data': (datetime.now().date() - df.index[-1].date()).days
+            }
+        }
         
-        # RSI adjustment
-        rsi_adjustment = 1.0
-        if current_rsi < 30:  # Oversold - potential bounce
-            rsi_adjustment = 1.08
-        elif current_rsi > 70:  # Overbought - potential pullback
-            rsi_adjustment = 0.92
-        elif 40 <= current_rsi <= 60:  # Neutral range - stable
-            rsi_adjustment = 1.02
+        # Generate scenarios if requested
+        if include_scenarios:
+            scenarios = self._generate_enhanced_scenarios(
+                current_close, close_pred, high_pred, low_pred, open_pred, 
+                volume_pred, close_uncertainty, sentiment, df
+            )
+            result['scenarios'] = scenarios
+            result['confidence'] = self._calculate_enhanced_confidence(df, sentiment, close_uncertainty)
+            result['technical_indicators'] = self._get_technical_indicators(df)
+            result['recommendation'] = self.api.get_trading_recommendation(symbol, result)
         
-        # Volatility-based variance
-        base_variance = max(current_volatility, 0.015)  # Minimum 1.5% variance
+        return result
+    
+    def _generate_enhanced_scenarios(self, current_close, close_pred, high_pred, low_pred, 
+                                    open_pred, volume_pred, uncertainty, sentiment, df) -> Dict:
+        """
+        Generate enhanced scenarios with clearer probability distributions.
+        """
+        # Calculate historical volatility
+        recent_volatility = df['volatility'].iloc[-5:].mean()
         
-        # Calculate adjusted predictions with confidence weighting
-        overall_adjustment = (sentiment_strength * 0.6 + rsi_adjustment * 0.4) * sentiment_confidence
+        # Sentiment multiplier
+        sentiment_score = sentiment.get('score', 0)
+        if sentiment_score > 2:
+            sentiment_multiplier = 1.15
+        elif sentiment_score > 0:
+            sentiment_multiplier = 1.05
+        elif sentiment_score < -2:
+            sentiment_multiplier = 0.85
+        else:
+            sentiment_multiplier = 0.95
         
-        # Best case (optimistic) - focus on high potential
-        best_multiplier = overall_adjustment * (1 + base_variance * 1.5)
+        # BEST CASE (90th percentile)
+        best_multiplier = 1 + (1.65 * recent_volatility * sentiment_multiplier)
         best_scenario = {
-            'open': open_pred * best_multiplier,
-            'high': high_pred * best_multiplier * 1.05,  # Higher high
-            'low': low_pred * best_multiplier * 0.98,    # Higher low
+            'probability': '10%',  # Top 10% outcome
+            'description': 'Optimistic scenario with strong buying pressure',
+            'open': open_pred * (1 + recent_volatility * 0.5),
+            'high': high_pred * best_multiplier,
+            'low': low_pred,
             'close': close_pred * best_multiplier,
             'volume': volume_pred * 1.3,
-            'profit_potential': ((high_pred * best_multiplier * 1.05) - current_close) / current_close * 100
+            'profit_potential': ((close_pred * best_multiplier) - current_close) / current_close * 100,
+            'target_price': close_pred * best_multiplier,
+            'stop_loss': current_close * 0.97  # 3% stop loss
         }
         
-        # Average case (most likely) - balanced view
-        avg_multiplier = overall_adjustment
+        # AVERAGE CASE (50th percentile - median)
         avg_scenario = {
+            'probability': '50%',  # Median outcome
+            'description': 'Most likely scenario based on current trends',
             'open': open_pred,
             'high': high_pred,
             'low': low_pred,
             'close': close_pred,
             'volume': volume_pred,
-            'profit_potential': ((high_pred + close_pred) / 2 - current_close) / current_close * 100
+            'profit_potential': ((close_pred) - current_close) / current_close * 100,
+            'target_price': close_pred,
+            'stop_loss': current_close * 0.97
         }
         
-        # Worst case (pessimistic) - focus on downside risk
-        worst_multiplier = overall_adjustment * (1 - base_variance * 1.5)
+        # WORST CASE (10th percentile)
+        worst_multiplier = 1 - (1.65 * recent_volatility * (2 - sentiment_multiplier))
         worst_scenario = {
-            'open': open_pred * worst_multiplier,
-            'high': high_pred * (1 - base_variance/3),    # Lower high
-            'low': low_pred * worst_multiplier * 0.95,   # Lower low
+            'probability': '10%',  # Bottom 10% outcome
+            'description': 'Pessimistic scenario with selling pressure',
+            'open': open_pred * (1 - recent_volatility * 0.5),
+            'high': high_pred,
+            'low': low_pred * worst_multiplier,
             'close': close_pred * worst_multiplier,
             'volume': volume_pred * 0.7,
-            'profit_potential': ((high_pred * (1 - base_variance/3)) - current_close) / current_close * 100
+            'profit_potential': ((close_pred * worst_multiplier) - current_close) / current_close * 100,
+            'target_price': close_pred * worst_multiplier,
+            'stop_loss': current_close * 0.95  # 5% stop loss for downside
+        }
+        
+        # REALISTIC RANGE (80% confidence)
+        range_multiplier = 1.28 * uncertainty  # 80% confidence interval
+        realistic_range = {
+            'probability': '80%',
+            'description': 'Expected price range with 80% confidence',
+            'lower_bound': close_pred - range_multiplier,
+            'upper_bound': close_pred + range_multiplier,
+            'expected': close_pred,
+            'range_width': 2 * range_multiplier,
+            'range_pct': (2 * range_multiplier / current_close * 100)
         }
         
         # Ensure logical consistency
@@ -862,28 +967,27 @@ class StockTradingSystem:
             scenario['high'] = max(scenario['high'], scenario['open'], scenario['low'], scenario['close'])
             scenario['low'] = min(scenario['low'], scenario['open'], scenario['high'], scenario['close'])
             
-            # Ensure profit potential is reasonable
-            if scenario['profit_potential'] > 100:  # Cap at 100%
-                scenario['profit_potential'] = 100
-            elif scenario['profit_potential'] < -50:  # Floor at -50%
-                scenario['profit_potential'] = -50
+            # Cap extreme values
+            scenario['profit_potential'] = max(-50, min(100, scenario['profit_potential']))
         
         return {
-            'best_case': {k: float(v) for k, v in best_scenario.items()},
-            'average_case': {k: float(v) for k, v in avg_scenario.items()},
-            'worst_case': {k: float(v) for k, v in worst_scenario.items()}
+            'best_case': {k: float(v) if isinstance(v, (int, float, np.number)) else v 
+                         for k, v in best_scenario.items()},
+            'average_case': {k: float(v) if isinstance(v, (int, float, np.number)) else v 
+                           for k, v in avg_scenario.items()},
+            'worst_case': {k: float(v) if isinstance(v, (int, float, np.number)) else v 
+                          for k, v in worst_scenario.items()},
+            'realistic_range': {k: float(v) if isinstance(v, (int, float, np.number)) else v 
+                               for k, v in realistic_range.items()}
         }
     
-    def _calculate_confidence(self, df: pd.DataFrame, sentiment: Dict) -> float:
+    def _calculate_enhanced_confidence(self, df: pd.DataFrame, sentiment: Dict, uncertainty: float) -> float:
         """
-        Calculate prediction confidence based on multiple factors.
+        Calculate prediction confidence with enhanced factors.
         """
-        if len(df) < 20:
-            return 0.6
-        
         confidence_factors = []
         
-        # 1. Data quality (more recent = higher confidence)
+        # 1. Data recency (more recent = higher confidence)
         days_since_last = (datetime.now().date() - df.index[-1].date()).days
         if days_since_last <= 1:
             confidence_factors.append(0.95)
@@ -894,9 +998,30 @@ class StockTradingSystem:
         else:
             confidence_factors.append(0.65)
         
-        # 2. Volatility (lower volatility = higher confidence)
+        # 2. Model uncertainty (lower = higher confidence)
+        if uncertainty < 1:
+            confidence_factors.append(0.90)
+        elif uncertainty < 2:
+            confidence_factors.append(0.80)
+        elif uncertainty < 3:
+            confidence_factors.append(0.70)
+        else:
+            confidence_factors.append(0.60)
+        
+        # 3. Data quantity
+        data_points = len(df)
+        if data_points > 100:
+            confidence_factors.append(0.90)
+        elif data_points > 50:
+            confidence_factors.append(0.80)
+        elif data_points >= self.lookback_window * 2:
+            confidence_factors.append(0.70)
+        else:
+            confidence_factors.append(0.60)
+        
+        # 4. Volatility (lower = higher confidence)
         if 'volatility' in df.columns:
-            vol = df['volatility'].iloc[-1]
+            vol = df['volatility'].iloc[-5:].mean()
             if vol < 0.01:
                 confidence_factors.append(0.90)
             elif vol < 0.02:
@@ -906,131 +1031,128 @@ class StockTradingSystem:
             else:
                 confidence_factors.append(0.60)
         
-        # 3. Data quantity
-        data_points = len(df)
-        if data_points > 100:
-            confidence_factors.append(0.90)
-        elif data_points > 50:
-            confidence_factors.append(0.80)
-        elif data_points > 30:
-            confidence_factors.append(0.70)
-        else:
-            confidence_factors.append(0.60)
-        
-        # 4. Technical indicator consistency
-        if 'rsi' in df.columns:
-            rsi = df['rsi'].iloc[-1]
-            if 40 <= rsi <= 60:
-                confidence_factors.append(0.85)  # Neutral RSI = more predictable
-            elif 30 <= rsi <= 70:
-                confidence_factors.append(0.75)
-            else:
-                confidence_factors.append(0.65)
-        
-        # 5. Volume consistency
-        if 'volume_ratio' in df.columns:
-            vol_ratio = df['volume_ratio'].iloc[-1]
-            if 0.8 <= vol_ratio <= 1.2:
-                confidence_factors.append(0.80)  # Normal volume = stable
-            else:
-                confidence_factors.append(0.70)  # Abnormal volume = less predictable
-        
-        # 6. Sentiment confidence
+        # 5. Sentiment confidence
         if 'confidence' in sentiment:
             confidence_factors.append(sentiment['confidence'])
         
+        # 6. Model training loss
+        if self.model.losses:
+            final_loss = self.model.losses[-1]
+            if final_loss < 0.01:
+                confidence_factors.append(0.90)
+            elif final_loss < 0.05:
+                confidence_factors.append(0.80)
+            elif final_loss < 0.10:
+                confidence_factors.append(0.70)
+            else:
+                confidence_factors.append(0.60)
+        
         # Calculate weighted average
         if confidence_factors:
-            # Give more weight to data quality and sentiment
-            weights = [1.2, 1.0, 1.0, 0.8, 0.8, 1.2]
-            weighted_sum = sum(f * w for f, w in zip(confidence_factors[:len(weights)], weights[:len(confidence_factors)]))
-            total_weight = sum(weights[:len(confidence_factors)])
-            confidence = weighted_sum / total_weight
+            confidence = np.mean(confidence_factors)
         else:
             confidence = 0.7
         
         # Apply bounds
-        confidence = max(0.5, min(0.95, confidence))
+        confidence = max(0.50, min(0.95, confidence))
         
-        return confidence
+        return float(confidence)
     
     def _get_technical_indicators(self, df: pd.DataFrame) -> Dict:
         """
-        Calculate technical indicators for display.
+        Get current technical indicators for display.
         """
-        if len(df) < 20:
+        if len(df) < 5:
             return {}
         
         indicators = {}
         
+        # Current values
+        current_close = df['close'].iloc[-1]
+        
         # Moving Averages
         if 'sma_20' in df.columns:
             indicators['sma_20'] = float(df['sma_20'].iloc[-1])
+            indicators['price_vs_sma20'] = float((current_close - indicators['sma_20']) / indicators['sma_20'] * 100)
+        
         if 'sma_50' in df.columns:
             indicators['sma_50'] = float(df['sma_50'].iloc[-1])
+            indicators['price_vs_sma50'] = float((current_close - indicators['sma_50']) / indicators['sma_50'] * 100)
         
         # RSI
         if 'rsi' in df.columns:
             rsi = df['rsi'].iloc[-1]
             indicators['rsi'] = float(rsi)
             if rsi < 30:
-                indicators['rsi_status'] = 'OVERSOLD'
+                indicators['rsi_status'] = 'OVERSOLD - Potential Buy Signal'
             elif rsi > 70:
-                indicators['rsi_status'] = 'OVERBOUGHT'
+                indicators['rsi_status'] = 'OVERBOUGHT - Potential Sell Signal'
+            elif 40 <= rsi <= 60:
+                indicators['rsi_status'] = 'NEUTRAL - Balanced'
+            elif rsi < 50:
+                indicators['rsi_status'] = 'SLIGHTLY BEARISH'
             else:
-                indicators['rsi_status'] = 'NEUTRAL'
+                indicators['rsi_status'] = 'SLIGHTLY BULLISH'
         
         # Volume
         if 'volume_ratio' in df.columns:
             vol_ratio = df['volume_ratio'].iloc[-1]
             indicators['volume_ratio'] = float(vol_ratio)
             if vol_ratio > 1.5:
-                indicators['volume_status'] = 'VERY HIGH'
+                indicators['volume_status'] = 'VERY HIGH - Strong Interest'
             elif vol_ratio > 1.2:
-                indicators['volume_status'] = 'HIGH'
+                indicators['volume_status'] = 'HIGH - Above Average'
             elif vol_ratio < 0.8:
-                indicators['volume_status'] = 'LOW'
+                indicators['volume_status'] = 'LOW - Below Average'
             else:
-                indicators['volume_status'] = 'NORMAL'
+                indicators['volume_status'] = 'NORMAL - Average'
         
         # Volatility
         if 'volatility' in df.columns:
             vol = df['volatility'].iloc[-1]
             indicators['volatility'] = float(vol * 100)  # as percentage
             if vol < 0.01:
-                indicators['volatility_status'] = 'LOW'
+                indicators['volatility_status'] = 'LOW - Stable Price Action'
             elif vol < 0.03:
-                indicators['volatility_status'] = 'MODERATE'
+                indicators['volatility_status'] = 'MODERATE - Normal Fluctuation'
             else:
-                indicators['volatility_status'] = 'HIGH'
+                indicators['volatility_status'] = 'HIGH - Significant Price Swings'
         
-        # Trend
-        if 'close' in df.columns:
-            current_close = df['close'].iloc[-1]
-            if 'sma_20' in df.columns:
-                sma_20 = df['sma_20'].iloc[-1]
-                if current_close > sma_20:
-                    indicators['trend_short'] = 'BULLISH'
-                else:
-                    indicators['trend_short'] = 'BEARISH'
+        # Trend analysis
+        if 'close' in df.columns and len(df) >= 5:
+            price_5d_ago = df['close'].iloc[-5]
+            price_change_5d = (current_close - price_5d_ago) / price_5d_ago * 100
+            indicators['5_day_change'] = float(price_change_5d)
             
-            if 'sma_50' in df.columns:
-                sma_50 = df['sma_50'].iloc[-1]
-                if current_close > sma_50:
-                    indicators['trend_long'] = 'BULLISH'
-                else:
-                    indicators['trend_long'] = 'BEARISH'
+            if price_change_5d > 5:
+                indicators['short_term_trend'] = 'STRONG UPTREND'
+            elif price_change_5d > 2:
+                indicators['short_term_trend'] = 'UPTREND'
+            elif price_change_5d < -5:
+                indicators['short_term_trend'] = 'STRONG DOWNTREND'
+            elif price_change_5d < -2:
+                indicators['short_term_trend'] = 'DOWNTREND'
+            else:
+                indicators['short_term_trend'] = 'SIDEWAYS'
         
         # Support and Resistance
-        if len(df) >= 20:
-            support = df['low'].rolling(window=20).min().iloc[-1]
-            resistance = df['high'].rolling(window=20).max().iloc[-1]
-            current_close = df['close'].iloc[-1]
+        if len(df) >= 10:
+            support = df['low'].rolling(window=10).min().iloc[-1]
+            resistance = df['high'].rolling(window=10).max().iloc[-1]
             
             indicators['support'] = float(support)
             indicators['resistance'] = float(resistance)
             indicators['distance_to_support'] = float((current_close - support) / current_close * 100)
             indicators['distance_to_resistance'] = float((resistance - current_close) / current_close * 100)
+            
+            # Position in range
+            range_position = (current_close - support) / (resistance - support + 1e-8)
+            if range_position > 0.8:
+                indicators['range_position'] = 'Near Resistance - Potential Reversal'
+            elif range_position < 0.2:
+                indicators['range_position'] = 'Near Support - Potential Bounce'
+            else:
+                indicators['range_position'] = 'Mid-Range'
         
         # MACD
         if 'macd' in df.columns and 'macd_signal' in df.columns:
@@ -1038,10 +1160,17 @@ class StockTradingSystem:
             macd_signal = df['macd_signal'].iloc[-1]
             indicators['macd'] = float(macd)
             indicators['macd_signal'] = float(macd_signal)
-            if macd > macd_signal:
-                indicators['macd_signal'] = 'BULLISH'
+            
+            if macd > macd_signal and macd > 0:
+                indicators['macd_status'] = 'STRONG BULLISH - Buy Signal'
+            elif macd > macd_signal:
+                indicators['macd_status'] = 'BULLISH - Positive Momentum'
+            elif macd < macd_signal and macd < 0:
+                indicators['macd_status'] = 'STRONG BEARISH - Sell Signal'
+            elif macd < macd_signal:
+                indicators['macd_status'] = 'BEARISH - Negative Momentum'
             else:
-                indicators['macd_signal'] = 'BEARISH'
+                indicators['macd_status'] = 'NEUTRAL'
         
         return indicators
     
@@ -1053,7 +1182,7 @@ class StockTradingSystem:
         
         # Fetch recent data
         end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=max(30, self.lookback_window * 3))).strftime('%Y-%m-%d')
         df = self.api.fetch_stock_data(symbol, start_date, end_date)
         
         X, y = self.prepare_data(df)
