@@ -449,7 +449,6 @@ STOCK DETAILS: {symbol}
 {'='*60}
 
 Current Price:      ${prediction['current_price']:.2f}
-Market Sentiment:   {prediction['market_sentiment'].upper()}
 Prediction Date:    {prediction['prediction_date']}
 Confidence Level:   {prediction['confidence']*100:.1f}%
 Last Updated:       {prediction['last_updated']}
