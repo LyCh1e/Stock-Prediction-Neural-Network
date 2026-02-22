@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import os
-from stock_volume_predictor import MassiveAPI, StockTradingSystem
+from stock_volume_predictor import YahooFinanceAPI as MassiveAPI, StockTradingSystem
 
 
 class StockAutoUpdater:
