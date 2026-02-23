@@ -40,7 +40,7 @@ def main():
     missing = check_dependencies()
     
     if missing:
-        print(f"❌ Missing packages: {', '.join(missing)}")
+        print(f"Missing packages: {', '.join(missing)}")
         print()
         print("Please install required packages:")
         print("  pip install -r requirements.txt")
@@ -52,7 +52,7 @@ def main():
     
     # Check for stock_gui.py
     if not os.path.exists('stock_gui.py'):
-        print("❌ stock_gui.py not found in current directory")
+        print("stock_gui.py not found in current directory")
         print("Please ensure all files are in the same folder")
         sys.exit(1)
     
@@ -66,7 +66,7 @@ def main():
         import stock_gui
         stock_gui.main()
     except Exception as e:
-        print(f"❌ Error launching GUI: {e}")
+        print(f"Error launching GUI: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
