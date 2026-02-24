@@ -153,6 +153,7 @@ def score_symbol(
     abs_pct_errors = [
         abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
         for r in matched
+        if r.actual is not None
     ]
     mean_ape       = float(np.mean(abs_pct_errors))
     mape_raw       = math.exp(-_MAPE_DECAY * mean_ape)   # (0, 1]
@@ -165,7 +166,7 @@ def score_symbol(
     dir_correct = []
     for r in matched:
         prev_close = _prev_close(r.date, raw_df)
-        if prev_close is None:
+        if prev_close is None or r.actual is None:
             continue
         predicted_up = r.avg >= prev_close
         actual_up    = r.actual >= prev_close
@@ -180,7 +181,7 @@ def score_symbol(
 
     # ── Component C: Within-range accuracy ───────────────────────────── #
     in_range = [
-        min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
+        r.actual is not None and min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
         for r in matched
     ]
     within_pct  = float(np.mean(in_range))
@@ -270,7 +271,7 @@ def _match_actuals(
         return records
 
     # Normalise index to tz-naive dates
-    idx = raw_df.index
+    idx = pd.DatetimeIndex(raw_df.index)
     if hasattr(idx, "tz") and idx.tz is not None:
         idx = idx.tz_localize(None)
     close_by_date = dict(zip(idx.normalize(), raw_df["close"].values))
@@ -301,7 +302,7 @@ def _prev_close(prediction_date: datetime, raw_df: pd.DataFrame) -> Optional[flo
     if raw_df is None or raw_df.empty:
         return None
 
-    idx = raw_df.index
+    idx = pd.DatetimeIndex(raw_df.index)
     if hasattr(idx, "tz") and idx.tz is not None:
         idx = idx.tz_localize(None)
 
@@ -309,7 +310,19 @@ def _prev_close(prediction_date: datetime, raw_df: pd.DataFrame) -> Optional[flo
     prior  = idx[idx < cutoff]
     if prior.empty:
         return None
-    return float(raw_df["close"].iloc[raw_df.index.get_loc(prior[-1])])
+    
+    loc = raw_df.index.get_loc(prior[-1])
+
+    if isinstance(loc, np.ndarray):
+        loc = np.where(loc)[0][-1] if len(np.where(loc)[0]) > 0 else None
+    if loc is None:
+        return None
+    
+    close_value = raw_df["close"].iloc[loc]
+
+    if isinstance(close_value, pd.Series):
+        close_value = close_value.iloc[0]
+    return float(close_value.item() if hasattr(close_value, 'item') else close_value)
 
 
 def _build_details(
@@ -319,11 +332,11 @@ def _build_details(
     """Build a list of per-prediction breakdown dicts for display / export."""
     rows = []
     for r in matched:
-        err_pct   = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
-        in_range  = min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
+        err_pct   = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100 if r.actual is not None else 0.0
+        in_range  = r.actual is not None and min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
         prev      = _prev_close(r.date, raw_df)
         direction = "N/A"
-        if prev is not None:
+        if prev is not None and r.actual is not None:
             predicted_up = r.avg  >= prev
             actual_up    = r.actual >= prev
             direction = "✓" if predicted_up == actual_up else "✗"
@@ -332,7 +345,7 @@ def _build_details(
             "Predicted Close": round(r.avg, 2),
             "Best Case":       round(r.best, 2),
             "Worst Case":      round(r.worst, 2),
-            "Actual Close":    round(r.actual, 2),
+            "Actual Close":    round(r.actual or 0, 2),
             "Abs Error %":     round(err_pct, 3),
             "In Range":        "✓" if in_range else "✗",
             "Direction":       direction,
