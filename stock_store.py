@@ -26,6 +26,7 @@ from typing import Callable, Dict, Optional
 import pandas as pd
 
 from stock_volume_predictor import StockTradingSystem
+from stock_scorer import score_symbol, score_all, ScoreResult
 
 # ── File name constants ──────────────────────────────────────────────────── #
 STOCK_DATA_FILE = "stock_data.xlsx"
@@ -95,13 +96,14 @@ class StockStore:
             return False
 
         self._stocks[symbol] = {
-            "system":       None,
-            "prediction":   None,
-            "raw_df":       None,
-            "pred_history": [],
-            "status":       "Training…",
-            "lookback":     lookback,
-            "epochs":       epochs,
+            "system":         None,
+            "prediction":     None,
+            "raw_df":         None,
+            "pred_history":   [],
+            "accuracy_score": None,   # ScoreResult, populated after predictions are archived
+            "status":         "Training…",
+            "lookback":       lookback,
+            "epochs":         epochs,
         }
         self.save_symbols()
         threading.Thread(
@@ -173,13 +175,14 @@ class StockStore:
                 if symbol in self._stocks:
                     continue
                 self._stocks[symbol] = {
-                    "system":       None,
-                    "prediction":   None,
-                    "raw_df":       None,
-                    "pred_history": [],
-                    "status":       "Training…",
-                    "lookback":     settings.get("lookback", 10),
-                    "epochs":       settings.get("epochs", 200),
+                    "system":         None,
+                    "prediction":     None,
+                    "raw_df":         None,
+                    "pred_history":   [],
+                    "accuracy_score": None,
+                    "status":         "Training…",
+                    "lookback":       settings.get("lookback", 10),
+                    "epochs":         settings.get("epochs", 200),
                 }
                 # Notify GUI to create the row/tab immediately
                 self._cb("refresh", symbol)
@@ -351,8 +354,50 @@ class StockStore:
         return os.path.abspath(PREDICTIONS_FILE)
 
     # ------------------------------------------------------------------ #
-    #  Background thread workers                                           #
+    #  Accuracy scoring                                                    #
     # ------------------------------------------------------------------ #
+
+    def score_symbol_entry(self, symbol: str) -> ScoreResult:
+        """
+        Compute and store an accuracy score for *symbol*.
+
+        Compares every archived prediction in pred_history against the
+        actual closing prices in raw_df and returns a ScoreResult.
+        The result is also stored in stocks[symbol]["accuracy_score"].
+        """
+        symbol = symbol.upper()
+        data = self._stocks.get(symbol)
+        if data is None:
+            from stock_scorer import _insufficient_data_result
+            return _insufficient_data_result(f"{symbol} is not tracked.")
+
+        ph = data.get("pred_history", [])
+        df = data.get("raw_df")
+        cp = (data.get("prediction") or {}).get("current_price", 0.0)
+
+        if df is None:
+            from stock_scorer import _insufficient_data_result
+            return _insufficient_data_result(f"{symbol} has no data.")
+        
+        result = score_symbol(ph, df, cp)
+        data["accuracy_score"] = result
+        self._cb("log",     f"{symbol} accuracy score: {result.score}/100 [{result.letter_grade}]")
+        self._cb("refresh", symbol)
+        return result
+
+    def score_all_entries(self) -> dict:
+        """
+        Compute accuracy scores for every tracked symbol.
+
+        Returns a dict mapping symbol → ScoreResult and updates each
+        stocks[symbol]["accuracy_score"] in place.
+        """
+        results = score_all(self._stocks)
+        for symbol, result in results.items():
+            self._stocks[symbol]["accuracy_score"] = result
+            self._cb("log",     f"{symbol} accuracy score: {result.score}/100 [{result.letter_grade}]")
+            self._cb("refresh", symbol)
+        return results
 
     def _train_thread(self, symbol: str) -> None:
         try:
@@ -429,8 +474,7 @@ class StockStore:
     #  Private helpers                                                     #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _archive_prediction(data: StockEntry) -> None:
+    def _archive_prediction(self, data: StockEntry) -> None:
         """Push the current prediction into pred_history before overwriting it."""
         old_pred = data.get("prediction")
         if old_pred and "scenarios" in old_pred:
@@ -440,3 +484,9 @@ class StockStore:
                 "best":  old_pred["scenarios"]["best_case"]["close"],
                 "worst": old_pred["scenarios"]["worst_case"]["close"],
             })
+            # Refresh the accuracy score with the newly archived record
+            ph = data.get("pred_history", [])
+            df = data.get("raw_df")
+            cp = (old_pred or {}).get("current_price", 0.0)
+            if df is not None:
+                data["accuracy_score"] = score_symbol(ph, df, cp)
