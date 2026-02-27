@@ -18,6 +18,7 @@ stock_gui.py focused purely on presentation.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from datetime import datetime, timedelta
@@ -34,16 +35,6 @@ PREDICTIONS_FILE = "stock_predictions.xlsx"
 SYMBOLS_FILE = "tracked_symbols.json"
 
 # ── Type alias ───────────────────────────────────────────────────────────── #
-# Each stock entry looks like:
-#   {
-#     "system":       StockTradingSystem | None,
-#     "prediction":   dict | None,
-#     "raw_df":       pd.DataFrame | None,
-#     "pred_history": list[dict],
-#     "status":       str,
-#     "lookback":     int,
-#     "epochs":       int,
-#   }
 StockEntry = Dict
 
 
@@ -100,7 +91,7 @@ class StockStore:
             "prediction":     None,
             "raw_df":         None,
             "pred_history":   [],
-            "accuracy_score": None,   # ScoreResult, populated after predictions are archived
+            "accuracy_score": None,
             "status":         "Training…",
             "lookback":       lookback,
             "epochs":         epochs,
@@ -184,7 +175,6 @@ class StockStore:
                     "lookback":       settings.get("lookback", 10),
                     "epochs":         settings.get("epochs", 200),
                 }
-                # Notify GUI to create the row/tab immediately
                 self._cb("refresh", symbol)
                 self._cb("chart",   symbol)
                 threading.Thread(
@@ -212,10 +202,20 @@ class StockStore:
         return df_out
 
     def pred_df_for_export(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Return a predictions DataFrame (Best/Average/Worst) for *symbol*."""
+        """
+        Return a predictions DataFrame for *symbol*.
+
+        Rows
+        ----
+        1–3  : Best / Average / Worst scenario for the *next* day prediction.
+        4+   : One "Daily Score" row per archived prediction that has been
+               matched to a real closing price, showing cumulative accuracy
+               metrics that update day-by-day.
+        """
         pred = self._stocks[symbol].get("prediction")
         if not pred or "scenarios" not in pred:
             return None
+
         sc = pred["scenarios"]
         rows = []
         for label, key in [
@@ -225,18 +225,138 @@ class StockStore:
         ]:
             s = sc[key]
             rows.append({
-                "Exported At":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Scenario":      label,
-                "Open":          round(s["open"],  2),
-                "High":          round(s["high"],  2),
-                "Low":           round(s["low"],   2),
-                "Close":         round(s["close"], 2),
-                "Profit %":      round(s["profit_potential"], 2),
-                "Current Price": round(pred["current_price"], 2),
-                "Confidence":    round(pred["confidence"] * 100, 1),
-                "Signal":        pred.get("recommendation", "").replace("_", " "),
+                "Exported At":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Scenario":       label,
+                "Open":           round(s["open"],  2),
+                "High":           round(s["high"],  2),
+                "Low":            round(s["low"],   2),
+                "Close":          round(s["close"], 2),
+                "Profit %":       round(s["profit_potential"], 2),
+                "Current Price":  round(pred["current_price"], 2),
+                "Confidence":     round(pred["confidence"] * 100, 1),
+                "Signal":         pred.get("recommendation", "").replace("_", " "),
+                # Score columns — blank for scenario rows
+                "Score":          "",
+                "Grade":          "",
+                "Avg Error %":    "",
+                "Dir Accuracy %": "",
+                "In Range %":     "",
+                "Matched Preds":  "",
             })
-        return pd.DataFrame(rows)
+
+        # ── Append daily score rows below the three scenario rows ──── #
+        score_rows = self._build_daily_score_rows(symbol)
+        df_pred = pd.DataFrame(rows)
+        if score_rows:
+            df_scores = pd.DataFrame(score_rows)
+            df_pred = pd.concat([df_pred, df_scores], ignore_index=True)
+
+        return df_pred
+
+    # ------------------------------------------------------------------ #
+    #  Daily score builder                                                 #
+    # ------------------------------------------------------------------ #
+
+    def _build_daily_score_rows(self, symbol: str) -> list:
+        """
+        Build one score row per archived prediction that has been matched to
+        an actual closing price.
+
+        Each row shows:
+          - Prediction date
+          - Predicted close vs actual close
+          - Whether actual landed inside the predicted band
+          - Rolling composite score (0–100) + letter grade
+          - Rolling avg error %, direction accuracy %, in-range %
+          - Count of matched predictions so far
+
+        The score is *cumulative/rolling* — each row shows the running score
+        up to that point so you can track model improvement over time.
+        """
+        data = self._stocks.get(symbol)
+        if data is None:
+            return []
+
+        ph = data.get("pred_history", [])
+        df = data.get("raw_df")
+        if not ph or df is None:
+            return []
+
+        from stock_scorer import _parse_records, _match_actuals, _prev_close
+
+        records = _parse_records(ph)
+        records = _match_actuals(records, df)
+        matched = [r for r in records if r.actual is not None]
+        if not matched:
+            return []
+
+        def _grade(s: float) -> str:
+            if s >= 93: return "A+"
+            if s >= 87: return "A"
+            if s >= 80: return "A-"
+            if s >= 74: return "B+"
+            if s >= 67: return "B"
+            if s >= 60: return "B-"
+            if s >= 54: return "C+"
+            if s >= 47: return "C"
+            if s >= 40: return "C-"
+            if s >= 34: return "D+"
+            if s >= 27: return "D"
+            if s >= 20: return "D-"
+            return "F"
+
+        score_rows = []
+        run_errors = []
+        run_dir    = []
+        run_range  = []
+
+        for r in matched:
+            if r.avg is None or r.actual is None:
+                continue
+            err_pct  = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
+            in_range = (r.best is not None and r.worst is not None and r.actual is not None and 
+                        min(r.best, r.worst) <= r.actual <= max(r.best, r.worst))
+            prev     = _prev_close(r.date, df)
+            dir_ok   = None
+            if prev is not None:
+                dir_ok = (r.avg >= prev) == (r.actual >= prev)
+
+            run_errors.append(err_pct)
+            if dir_ok is not None:
+                run_dir.append(dir_ok)
+            run_range.append(in_range)
+
+            # Rolling composite score (same weights as stock_scorer)
+            mean_ape   = sum(run_errors) / len(run_errors)
+            mape_raw   = math.exp(-0.15 * mean_ape)
+            dir_acc    = (sum(run_dir) / len(run_dir)) if run_dir else 0.5
+            range_frac = sum(run_range) / len(run_range)
+            raw_score  = 0.50 * mape_raw + 0.30 * dir_acc + 0.20 * range_frac
+            composite  = round(min(100.0, max(0.0, raw_score * 100)), 1)
+
+            pred_date = (r.date.strftime("%Y-%m-%d %H:%M")
+                         if hasattr(r.date, "strftime") else str(r.date))
+
+            score_rows.append({
+                "Exported At":    pred_date,
+                "Scenario":       "── Daily Score ──",
+                "Open":           "",
+                "High":           "",
+                "Low":            "",
+                "Close":          f"Pred {round(r.avg or 0, 2)}  →  Actual {round(r.actual or 0, 2)}",
+                "Profit %":       round((r.actual - r.avg) / (abs(r.avg) + 1e-8) * 100, 2) if r.actual and r.avg else 0,
+                "Current Price":  round(r.actual or 0, 2),
+                "Confidence":     "",
+                "Signal":         "✓ In range" if in_range else "✗ Outside",
+                "Score":          composite,
+                "Grade":          _grade(composite),
+                "Avg Error %":    round(mean_ape, 2),
+                "Dir Accuracy %": round(dir_acc * 100, 1),
+                "In Range %":     round(range_frac * 100, 1),
+                "Matched Preds":  len(run_errors),
+            })
+
+        return score_rows
 
     # ------------------------------------------------------------------ #
     #  Excel: stock data                                                   #
@@ -360,10 +480,6 @@ class StockStore:
     def score_symbol_entry(self, symbol: str) -> ScoreResult:
         """
         Compute and store an accuracy score for *symbol*.
-
-        Compares every archived prediction in pred_history against the
-        actual closing prices in raw_df and returns a ScoreResult.
-        The result is also stored in stocks[symbol]["accuracy_score"].
         """
         symbol = symbol.upper()
         data = self._stocks.get(symbol)
@@ -378,7 +494,7 @@ class StockStore:
         if df is None:
             from stock_scorer import _insufficient_data_result
             return _insufficient_data_result(f"{symbol} has no data.")
-        
+
         result = score_symbol(ph, df, cp)
         data["accuracy_score"] = result
         self._cb("log",     f"{symbol} accuracy score: {result.score}/100 [{result.letter_grade}]")
@@ -388,9 +504,6 @@ class StockStore:
     def score_all_entries(self) -> dict:
         """
         Compute accuracy scores for every tracked symbol.
-
-        Returns a dict mapping symbol → ScoreResult and updates each
-        stocks[symbol]["accuracy_score"] in place.
         """
         results = score_all(self._stocks)
         for symbol, result in results.items():
@@ -484,7 +597,6 @@ class StockStore:
                 "best":  old_pred["scenarios"]["best_case"]["close"],
                 "worst": old_pred["scenarios"]["worst_case"]["close"],
             })
-            # Refresh the accuracy score with the newly archived record
             ph = data.get("pred_history", [])
             df = data.get("raw_df")
             cp = (old_pred or {}).get("current_price", 0.0)

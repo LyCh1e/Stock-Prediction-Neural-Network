@@ -19,6 +19,7 @@ import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 import matplotlib.dates as mdates
 
 from stock_store import StockStore, STOCK_DATA_FILE, PREDICTIONS_FILE
@@ -29,6 +30,7 @@ class StockPriceGUI:
     """
     Stock price predictor GUI with:
     - Tab per stock showing actual vs predicted close price chart
+    - Zoom / pan toolbar on every chart
     - Delegates all CRUD / data operations to StockStore
     """
 
@@ -142,12 +144,19 @@ class StockPriceGUI:
         chart_ctrl = ttk.Frame(chart_outer)
         chart_ctrl.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
         ttk.Button(chart_ctrl, text="Refresh Charts", command=self.refresh_all_charts).pack(side="left", padx=4)
+        ttk.Label(
+            chart_ctrl,
+            text="Tip: use the toolbar below each chart to zoom 🔍, pan ✋, or save 💾",
+            foreground="#666",
+            font=("TkDefaultFont", 8),
+        ).pack(side="left", padx=12)
 
         self.chart_nb = ttk.Notebook(chart_outer)
         self.chart_nb.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
 
-        self._chart_tabs:   dict = {}
-        self._chart_canvas: dict = {}
+        self._chart_tabs:    dict = {}
+        self._chart_canvas:  dict = {}
+        self._chart_toolbar: dict = {}
 
     # ------------------------------------------------------------------ #
     #  LOGGING                                                             #
@@ -174,10 +183,9 @@ class StockPriceGUI:
         data   = self.store.get(symbol) or {}
         pred   = data.get("prediction")
         status = data.get("status", "—")
-        result = data.get("accuracy_score")   # ScoreResult or None
+        result = data.get("accuracy_score")
         sig_bg = sig_fg = None
 
-        # Score cell
         if result and result.matched_predictions > 0:
             score_text = f"{result.score:.0f}  {result.letter_grade}"
         else:
@@ -255,10 +263,12 @@ class StockPriceGUI:
             frame = self._chart_tabs.pop(symbol)
             self.chart_nb.forget(self.chart_nb.index(frame))
         self._chart_canvas.pop(symbol, None)
+        self._chart_toolbar.pop(symbol, None)
 
     def _draw_chart(self, symbol: str) -> None:
         """
-        Draw actual close history and prediction scenarios on one shared axis.
+        Draw actual close history and prediction scenarios on one shared axis,
+        with a matplotlib NavigationToolbar for zoom / pan / save.
 
         Layout
         ------
@@ -266,8 +276,8 @@ class StockPriceGUI:
         ── A vertical dotted line marks "today", dividing history from forecast.
         ── Prediction avg line (orange) bridges from the last actual close into
            the future, flanked by best/worst dashed lines and a shaded band.
-        ── A fixed info box pinned to the top-right corner of the chart updates
-           its text on hover — it never moves regardless of cursor position.
+        ── A fixed info box pinned to the top-right corner updates on hover.
+        ── NavigationToolbar2Tk sits below the canvas for zoom/pan/save.
         """
         import numpy as np
 
@@ -278,9 +288,15 @@ class StockPriceGUI:
         self._ensure_chart_tab(symbol)
         frame = self._chart_tabs[symbol]
 
+        # Destroy old canvas + toolbar if they exist
         if symbol in self._chart_canvas:
             try:
                 self._chart_canvas[symbol].get_tk_widget().destroy()
+            except Exception:
+                pass
+        if symbol in self._chart_toolbar:
+            try:
+                self._chart_toolbar[symbol].destroy()
             except Exception:
                 pass
         for w in frame.winfo_children():
@@ -334,7 +350,6 @@ class StockPriceGUI:
             pred_avg   = [p.get("avg",   p.get("close", 0)) for p in all_pts]
             pred_worst = [p.get("worst", p.get("close", 0)) for p in all_pts]
 
-            # Bridge: connect last actual to first prediction for visual continuity
             if actual_dates:
                 bridge_dates = [actual_dates[-1], pred_dates[0]]
                 bridge_avg   = [actual_closes[-1], pred_avg[0]]
@@ -399,12 +414,21 @@ class StockPriceGUI:
 
         fig.tight_layout(pad=1.8)
 
+        # ── 7. Embed canvas ──────────────────────────────────────── #
         canvas = FigureCanvasTkAgg(fig, master=frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
-        self._chart_canvas[symbol] = canvas
 
-        # ── 7. Hover handler ─────────────────────────────────────── #
+        # ── 8. Navigation toolbar (zoom / pan / home / save) ─────── #
+        toolbar_frame = tk.Frame(frame, bg="#f0f0f0")
+        toolbar_frame.pack(fill="x", side="bottom")
+        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+        toolbar.update()
+
+        self._chart_canvas[symbol]  = canvas
+        self._chart_toolbar[symbol] = toolbar
+
+        # ── 9. Hover handler ─────────────────────────────────────── #
         def on_move(event):
             if event.inaxes != ax:
                 vline.set_visible(False)
