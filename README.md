@@ -35,9 +35,7 @@ No API key setup required. Add a symbol and training begins immediately.
 ## Installation
 
 1. **Clone or download the repository**
-
-2. **Install dependencies:**
-```bash
+@ -42,338 +41,250 @@ python stock_gui.py
 pip install -r requirements.txt
 ```
 
