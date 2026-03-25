@@ -73,10 +73,6 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
   - **Stock Manager tab**: tracked symbols table (symbol, price, sentiment, confidence, signal, score, status), action buttons, activity log
   - **Charts tab**: one sub-tab per symbol with actual price history, past-prediction overlay, future forecast band, and a zoom/pan/save toolbar
 
-<img width="1912" height="1000" alt="image" src="https://github.com/user-attachments/assets/97f6f285-288f-4e9b-b072-72818180b979" />
-<img width="1912" height="1001" alt="image" src="https://github.com/user-attachments/assets/ee3076a8-93c5-4832-8a5c-64e23175f98f" />
-<img width="1916" height="1000" alt="image" src="https://github.com/user-attachments/assets/5ddd563a-daad-42d6-8668-33cefd1ddd58" />
-
 ### 5. Launcher (`launch.py`)
 - Checks all dependencies before launching
 - Prints startup summary and feature list
