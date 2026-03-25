@@ -7,7 +7,7 @@ Responsibilities
 ----------------
 - In-memory stock registry (add / remove / get)
 - Symbol persistence  → tracked_symbols.json
-- Excel export/update → stock_data.xlsx, stock_predictions.xlsx
+- Excel export/update → stock_data.xlsx, stock_predictions.xlsx, stock_models.xlsx
 - DataFrame helpers   → OHLCV and predictions frames
 - Background thread workers (train / predict / adaptive-update)
 
@@ -24,15 +24,18 @@ import threading
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Optional
 
+import numpy as np
+
 import pandas as pd
 
 from stock_volume_predictor import StockTradingSystem
 from stock_scorer import score_symbol, score_all, ScoreResult
 
 # ── File name constants ──────────────────────────────────────────────────── #
-STOCK_DATA_FILE = "stock_data.xlsx"
+STOCK_DATA_FILE  = "stock_data.xlsx"
 PREDICTIONS_FILE = "stock_predictions.xlsx"
-SYMBOLS_FILE = "tracked_symbols.json"
+MODELS_FILE      = "stock_models.xlsx"
+SYMBOLS_FILE     = "tracked_symbols.json"
 
 # ── Type alias ───────────────────────────────────────────────────────────── #
 StockEntry = Dict
@@ -512,28 +515,174 @@ class StockStore:
             self._cb("refresh", symbol)
         return results
 
+    # ------------------------------------------------------------------ #
+    #  Model persistence (xlsx)                                            #
+    # ------------------------------------------------------------------ #
+
+    def save_model_to_xlsx(self, symbol: str) -> None:
+        """
+        Persist the trained network weights, scaler params, and prediction
+        history for *symbol* to MODELS_FILE.
+
+        Sheet layout in stock_models.xlsx
+        ----------------------------------
+        ``{SYMBOL}``          – one row with the latest weights (overwritten
+                                each save so the file stays compact).
+        ``{SYMBOL}_history``  – append-only log of every archived prediction
+                                (date, avg, best, worst).
+        """
+        data = self._stocks.get(symbol)
+        if data is None:
+            return
+        system = data.get("system")
+        if system is None:
+            return
+
+        m = system.model  # AdaptiveStockPredictor instance
+
+        # ── weights row ────────────────────────────────────────────── #
+        weights_row = {
+            "Timestamp":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "InputSize":    int(m.input_size),
+            "HiddenSize":   int(m.hidden_size),
+            "LR":           float(m.learning_rate),
+            "W1":           json.dumps(m.W1.tolist()),
+            "b1":           json.dumps(m.b1.tolist()),
+            "W2":           json.dumps(m.W2.tolist()),
+            "b2":           json.dumps(m.b2.tolist()),
+            "ScalerParams": json.dumps(system.scaler_params),
+            "FinalLoss":    float(m.losses[-1]) if m.losses else None,
+        }
+        df_weights = pd.DataFrame([weights_row])
+
+        # ── prediction history rows ────────────────────────────────── #
+        ph = data.get("pred_history", [])
+        hist_rows = []
+        for p in ph:
+            dt = p["date"]
+            hist_rows.append({
+                "Date":  dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(dt, "strftime") else str(dt),
+                "Avg":   round(float(p.get("avg",   0)), 4),
+                "Best":  round(float(p.get("best",  0)), 4),
+                "Worst": round(float(p.get("worst", 0)), 4),
+            })
+        df_hist = pd.DataFrame(hist_rows) if hist_rows else pd.DataFrame(
+            columns=["Date", "Avg", "Best", "Worst"]
+        )
+
+        # ── write to xlsx ──────────────────────────────────────────── #
+        try:
+            mode = "a" if os.path.exists(MODELS_FILE) else "w"
+            with pd.ExcelWriter(
+                MODELS_FILE, engine="openpyxl",
+                mode=mode, if_sheet_exists="replace",
+            ) as writer:
+                df_weights.to_excel(writer, sheet_name=symbol,              index=False)
+                df_hist.to_excel(   writer, sheet_name=f"{symbol}_history", index=False)
+            self._cb("log", f"{symbol}: model + history saved → {MODELS_FILE}")
+        except Exception as exc:
+            self._cb("log", f"Warning: could not save model for {symbol}: {exc}")
+
+    def load_model_from_xlsx(self, symbol: str) -> bool:
+        """
+        Restore network weights, scaler params, and prediction history for
+        *symbol* from MODELS_FILE.
+
+        Returns True if the model was successfully restored, False otherwise.
+        The caller is responsible for setting ``data["system"]`` before calling
+        this — the weights are written directly into ``system.model``.
+        """
+        if not os.path.exists(MODELS_FILE):
+            return False
+
+        data = self._stocks.get(symbol)
+        if data is None:
+            return False
+        system = data.get("system")
+        if system is None:
+            return False
+
+        try:
+            # ── restore weights ────────────────────────────────────── #
+            df_w = pd.read_excel(MODELS_FILE, sheet_name=symbol, engine="openpyxl")
+            if df_w.empty:
+                return False
+
+            row = df_w.iloc[-1]  # most recent saved state
+            m = system.model
+
+            m.W1 = np.array(json.loads(row["W1"]))
+            m.b1 = np.array(json.loads(row["b1"]))
+            m.W2 = np.array(json.loads(row["W2"]))
+            m.b2 = np.array(json.loads(row["b2"]))
+
+            sp = json.loads(row["ScalerParams"])
+            # json round-trips int keys as strings — restore original keys
+            system.scaler_params = {k: v for k, v in sp.items()}
+
+            self._cb("log", f"{symbol}: weights restored from {MODELS_FILE} "
+                            f"(saved {row['Timestamp']})")
+
+            # ── restore prediction history ─────────────────────────── #
+            try:
+                df_h = pd.read_excel(
+                    MODELS_FILE, sheet_name=f"{symbol}_history", engine="openpyxl"
+                )
+                ph = []
+                for _, r in df_h.iterrows():
+                    try:
+                        dt = datetime.strptime(str(r["Date"]), "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        dt = datetime.strptime(str(r["Date"])[:10], "%Y-%m-%d")
+                    ph.append({
+                        "date":  dt,
+                        "avg":   float(r["Avg"]),
+                        "best":  float(r["Best"]),
+                        "worst": float(r["Worst"]),
+                    })
+                data["pred_history"] = ph
+                self._cb("log", f"{symbol}: {len(ph)} history point(s) restored")
+            except Exception:
+                pass  # history sheet missing — not fatal
+
+            return True
+
+        except Exception as exc:
+            self._cb("log", f"{symbol}: no saved model found ({exc})")
+            return False
+
     def _train_thread(self, symbol: str) -> None:
         try:
             data = self._stocks[symbol]
             system = StockTradingSystem(api_key="", lookback_window=data["lookback"])
-            self._cb("status", f"Training {symbol}…")
+            data["system"] = system  # set early so load_model_from_xlsx can access it
 
             end_date   = datetime.now().strftime("%Y-%m-%d")
             start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
             raw_df = system.api.fetch_stock_data(symbol, start_date, end_date)
             data["raw_df"] = raw_df
 
-            system.train_model(symbol, epochs=data["epochs"])
-            data["system"] = system
+            # Try to resume from previously saved weights
+            restored = self.load_model_from_xlsx(symbol)
+            if restored:
+                self._cb("status", f"Updating {symbol} (resumed from saved model)…")
+                # Adapt existing weights to the latest data instead of full retrain
+                system.train_model(symbol, epochs=max(20, data["epochs"] // 5))
+            else:
+                self._cb("status", f"Training {symbol} from scratch…")
+                system.train_model(symbol, epochs=data["epochs"])
+
             data["status"] = "Trained"
 
             pred = system.predict_next_day(symbol, include_scenarios=True)
             data["prediction"] = pred
             data["status"] = "Ready"
 
+            self.save_model_to_xlsx(symbol)
+
             self._cb("refresh", symbol)
             self._cb("chart",   symbol)
-            self._cb("log",     f"✓ {symbol} trained and predicted")
+            self._cb("log",     f"✓ {symbol} {'updated' if restored else 'trained'} and predicted")
             self._cb("status",  f"Ready — {symbol} complete")
         except Exception as exc:
             err = str(exc)
@@ -555,6 +704,9 @@ class StockStore:
 
             data["prediction"] = pred
             data["status"] = "Ready"
+
+            self.save_model_to_xlsx(symbol)
+
             self._cb("refresh", symbol)
             self._cb("chart",   symbol)
             self._cb("log",     f"✓ {symbol} predictions refreshed")
@@ -576,6 +728,9 @@ class StockStore:
             pred = data["system"].predict_next_day(symbol, include_scenarios=True)
             data["prediction"] = pred
             data["status"] = "Ready"
+
+            self.save_model_to_xlsx(symbol)
+
             self._cb("refresh", symbol)
             self._cb("chart",   symbol)
             self._cb("log",     f"✓ {symbol} adaptively updated")

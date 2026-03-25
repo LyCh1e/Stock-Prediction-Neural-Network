@@ -208,10 +208,7 @@ class StockPriceGUI:
         else:
             self.tree.insert("", "end", iid=symbol, values=vals, tags=(tag,))
 
-        if pred and sig_bg and sig_fg:
-            row_tag = f"row_{symbol}"
-            self.tree.tag_configure(row_tag, background=sig_bg, foreground=sig_fg)
-            self.tree.item(symbol, tags=(row_tag,))
+        if pred:
             if sentiment in ("Very Bullish", "Bullish"):
                 sen_icon = "▲ "
             elif sentiment in ("Very Bearish", "Bearish"):
@@ -344,40 +341,65 @@ class StockPriceGUI:
         pred_avg:   list = []
         pred_worst: list = []
 
+        # Split predictions into historical (overlaps actual data) and future
+        hist_pred_dates: list = []
+        hist_pred_avg:   list = []
+        future_pred_dates: list = []
+        future_pred_best:  list = []
+        future_pred_avg:   list = []
+        future_pred_worst: list = []
+
+        today = datetime.now()
+
         if all_pts:
             pred_dates = [p["date"]                          for p in all_pts]
             pred_best  = [p.get("best",  p.get("close", 0)) for p in all_pts]
             pred_avg   = [p.get("avg",   p.get("close", 0)) for p in all_pts]
             pred_worst = [p.get("worst", p.get("close", 0)) for p in all_pts]
 
-            if actual_dates:
-                bridge_dates = [actual_dates[-1], pred_dates[0]]
-                bridge_avg   = [actual_closes[-1], pred_avg[0]]
-                bridge_best  = [actual_closes[-1], pred_best[0]]
-                bridge_worst = [actual_closes[-1], pred_worst[0]]
-                full_dates  = bridge_dates  + pred_dates[1:]
-                full_avg    = bridge_avg    + pred_avg[1:]
-                full_best   = bridge_best   + pred_best[1:]
-                full_worst  = bridge_worst  + pred_worst[1:]
-            else:
-                full_dates  = pred_dates
-                full_avg    = pred_avg
-                full_best   = pred_best
-                full_worst  = pred_worst
+            for d, b, a, w in zip(pred_dates, pred_best, pred_avg, pred_worst):
+                pt_dt = d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time())
+                if pt_dt.date() < today.date():
+                    hist_pred_dates.append(d)
+                    hist_pred_avg.append(a)
+                else:
+                    future_pred_dates.append(d)
+                    future_pred_best.append(b)
+                    future_pred_avg.append(a)
+                    future_pred_worst.append(w)
 
-            ax.fill_between(full_dates, full_worst, full_best,
-                            color="#ff6b35", alpha=0.12, label="Predicted Range", zorder=2)
-            ax.plot(full_dates, full_best,  color="#2e7d32", linewidth=1.1,
-                    linestyle="--", label="Best Case", zorder=3)
-            ax.plot(full_dates, full_worst, color="#c62828", linewidth=1.1,
-                    linestyle="--", label="Worst Case", zorder=3)
-            ax.plot(full_dates, full_avg,   color="#e65100", linewidth=1.8,
-                    label="Avg Prediction", zorder=4)
-            ax.scatter(pred_dates, pred_avg, color="#e65100", s=40,
-                       zorder=6, edgecolors="white", linewidths=0.8)
+            # Plot historical predictions overlaid on actual data
+            if hist_pred_dates:
+                ax.plot(hist_pred_dates, hist_pred_avg, color="#e65100", linewidth=1.4,
+                        linestyle="--", label="Past Predictions", zorder=5)
+                ax.scatter(hist_pred_dates, hist_pred_avg, color="#e65100", s=30,
+                           zorder=6, edgecolors="white", linewidths=0.8)
+
+            # Plot future predictions continuing from last actual close
+            if future_pred_dates:
+                if actual_dates:
+                    bridge_dates = [actual_dates[-1]] + future_pred_dates
+                    bridge_avg   = [actual_closes[-1]] + future_pred_avg
+                    bridge_best  = [actual_closes[-1]] + future_pred_best
+                    bridge_worst = [actual_closes[-1]] + future_pred_worst
+                else:
+                    bridge_dates  = future_pred_dates
+                    bridge_avg    = future_pred_avg
+                    bridge_best   = future_pred_best
+                    bridge_worst  = future_pred_worst
+
+                ax.fill_between(bridge_dates, bridge_worst, bridge_best,
+                                color="#ff6b35", alpha=0.12, label="Predicted Range", zorder=2)
+                ax.plot(bridge_dates, bridge_best,  color="#2e7d32", linewidth=1.1,
+                        linestyle="--", label="Best Case", zorder=3)
+                ax.plot(bridge_dates, bridge_worst, color="#c62828", linewidth=1.1,
+                        linestyle="--", label="Worst Case", zorder=3)
+                ax.plot(bridge_dates, bridge_avg,   color="#e65100", linewidth=1.8,
+                        label="Avg Prediction", zorder=4)
+                ax.scatter(future_pred_dates, future_pred_avg, color="#e65100", s=40,
+                           zorder=6, edgecolors="white", linewidths=0.8)
 
         # ── 3. "Today" divider ────────────────────────────────────── #
-        today = datetime.now()
         ax.axvline(x=float(mdates.date2num(today)), color="#9e9e9e", linewidth=1.2,
                    linestyle=":", label="Today", zorder=3)
 
@@ -443,19 +465,19 @@ class StockPriceGUI:
                 canvas.draw_idle()
                 return
 
-            in_pred = bool(pred_dates and mx >= mdates.date2num(pred_dates[0]))
+            in_future = bool(future_pred_dates and mx >= mdates.date2num(future_pred_dates[0]))
 
-            if in_pred:
-                x_num = mdates.date2num(pred_dates)
+            if in_future:
+                x_num = mdates.date2num(future_pred_dates)
                 idx   = int(np.argmin(np.abs(x_num - mx)))
-                idx   = max(0, min(idx, len(pred_dates) - 1))
-                xv    = pred_dates[idx]
-                yv    = pred_avg[idx]
+                idx   = max(0, min(idx, len(future_pred_dates) - 1))
+                xv    = future_pred_dates[idx]
+                yv    = future_pred_avg[idx]
                 dt    = xv.strftime("%Y-%m-%d") if hasattr(xv, "strftime") else str(xv)[:10]
                 text  = (f"  {dt}  [Forecast]  \n"
                          f"  Avg:   ${yv:.2f}       \n"
-                         f"  Best:  ${pred_best[idx]:.2f}       \n"
-                         f"  Worst: ${pred_worst[idx]:.2f}       ")
+                         f"  Best:  ${future_pred_best[idx]:.2f}       \n"
+                         f"  Worst: ${future_pred_worst[idx]:.2f}       ")
                 dot.set_color("#e65100")
             elif actual_dates:
                 x_num = mdates.date2num(actual_dates)
