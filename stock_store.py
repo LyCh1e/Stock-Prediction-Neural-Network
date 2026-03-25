@@ -572,11 +572,14 @@ class StockStore:
 
         # ── write to xlsx ──────────────────────────────────────────── #
         try:
-            mode = "a" if os.path.exists(MODELS_FILE) else "w"
-            with pd.ExcelWriter(
-                MODELS_FILE, engine="openpyxl",
-                mode=mode, if_sheet_exists="replace",
-            ) as writer:
+            if os.path.exists(MODELS_FILE):
+                writer_ctx = pd.ExcelWriter(
+                    MODELS_FILE, engine="openpyxl",
+                    mode="a", if_sheet_exists="replace",
+                )
+            else:
+                writer_ctx = pd.ExcelWriter(MODELS_FILE, engine="openpyxl", mode="w")
+            with writer_ctx as writer:
                 df_weights.to_excel(writer, sheet_name=symbol,              index=False)
                 df_hist.to_excel(   writer, sheet_name=f"{symbol}_history", index=False)
             self._cb("log", f"{symbol}: model + history saved → {MODELS_FILE}")
