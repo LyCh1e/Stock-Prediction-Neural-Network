@@ -68,9 +68,6 @@ The system consists of three main components:
   - Scenario comparison charts
   - Profit potential analysis
   - Activity log and status monitoring
-<img width="1912" height="1000" alt="image" src="https://github.com/user-attachments/assets/97f6f285-288f-4e9b-b072-72818180b979" />
-<img width="1912" height="1001" alt="image" src="https://github.com/user-attachments/assets/ee3076a8-93c5-4832-8a5c-64e23175f98f" />
-<img width="1916" height="1000" alt="image" src="https://github.com/user-attachments/assets/5ddd563a-daad-42d6-8668-33cefd1ddd58" />
 
 ### 3. Launcher (`launch.py`)
 - Dependency checking
