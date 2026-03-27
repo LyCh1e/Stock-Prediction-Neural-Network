@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import queue
 import threading
+import time
 from datetime import datetime, timedelta
 
 import matplotlib
@@ -45,6 +46,7 @@ class StockPriceGUI:
         self.create_widgets()
         self.process_queue()
         self.store.load_symbols()
+        self._start_auto_threads()
 
     # ------------------------------------------------------------------ #
     #  Convenience shortcut                                                #
@@ -87,14 +89,22 @@ class StockPriceGUI:
         ttk.Button(ctrl, text="Add & Train",               command=self.add_stock).grid(row=0, column=6, padx=5)
         ttk.Button(ctrl, text="Quick Add (SPY/AAPL/MSFT)", command=self.quick_add).grid(row=0, column=7, padx=5)
 
+        pull_bar = ttk.Frame(mgr_frame)
+        pull_bar.grid(row=1, column=0, sticky="w", padx=8, pady=(0, 2))
+        self.pull_dot = tk.Label(pull_bar, text="●", foreground="#9e9e9e", font=("Helvetica", 11))
+        self.pull_dot.pack(side="left")
+        self.last_pull_var = tk.StringVar(value="Last updated: —")
+        tk.Label(pull_bar, textvariable=self.last_pull_var,
+                 font=("Helvetica", 9), foreground="#555").pack(side="left", padx=4)
+
         tbl = ttk.LabelFrame(mgr_frame, text="Tracked Stocks", padding="6")
         tbl.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
         tbl.columnconfigure(0, weight=1)
         tbl.rowconfigure(0, weight=1)
 
-        cols = ("Symbol", "Current Price", "Sentiment", "Confidence", "Signal", "Score", "Status")
+        cols = ("Symbol", "Current Price", "Sentiment", "Confidence", "Signal", "Status")
         self.tree = ttk.Treeview(tbl, columns=cols, show="headings", height=10)
-        for col, w in zip(cols, [90, 110, 120, 100, 130, 90, 140]):
+        for col, w in zip(cols, [90, 110, 120, 100, 130, 140]):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=w, anchor="center")
         self.tree.tag_configure("ready",    background="#e8f5e9")
@@ -106,22 +116,16 @@ class StockPriceGUI:
         vsb.grid(row=0, column=1, sticky="ns")
 
         btn = ttk.Frame(mgr_frame)
-        btn.grid(row=3, column=0, sticky="w", padx=8, pady=4)
+        btn.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
         for text, cmd in [
-            ("Predict Selected",    self.predict_selected),
             ("Predict All",         self.predict_all),
-            ("Update Selected",     self.update_selected),
             ("Update All",          self.update_all),
             ("Remove Selected",     self.remove_selected),
-            ("Score Selected",      self.score_selected),
-            ("Score All",           self.score_all),
-            ("View Score",          self.view_score),
-            ("Export Stock Data",   self.export_stock_data),
             ("Update Stock Data",   self.update_stock_data),
-            ("Export Predictions",  self.export_predictions),
             ("Update Predictions",  self.update_predictions),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
+
 
         log_f = ttk.LabelFrame(mgr_frame, text="Log", padding="4")
         log_f.grid(row=4, column=0, sticky="ew", padx=8, pady=4)
@@ -183,26 +187,17 @@ class StockPriceGUI:
         data   = self.store.get(symbol) or {}
         pred   = data.get("prediction")
         status = data.get("status", "—")
-        result = data.get("accuracy_score")
-        sig_bg = sig_fg = None
-
-        if result and result.matched_predictions > 0:
-            score_text = f"{result.score:.0f}  {result.letter_grade}"
-        else:
-            score_text = "—"
-
         if pred:
             current   = f"${pred['current_price']:.2f}"
             sentiment = pred.get("sentiment_analysis", {}).get("sentiment", "—")
             conf      = f"{pred['confidence'] * 100:.0f}%"
             signal    = pred.get("recommendation", "—").replace("_", " ")
-            sig_bg, sig_fg = self._signal_colours(signal)
             tag = "ready"
         else:
             current = sentiment = conf = signal = "—"
             tag = "error" if "Error" in status else "training"
 
-        vals = (symbol, current, sentiment, conf, signal, score_text, status)
+        vals = (symbol, current, sentiment, conf, signal, status)
         if self._tree_has(symbol):
             self.tree.item(symbol, values=vals, tags=(tag,))
         else:
@@ -216,7 +211,7 @@ class StockPriceGUI:
             else:
                 sen_icon = "— "
             self.tree.item(symbol, values=(
-                symbol, current, sen_icon + sentiment, conf, signal, score_text, status
+                symbol, current, sen_icon + sentiment, conf, signal, status
             ))
 
     def _selected_symbols(self) -> list:
@@ -742,6 +737,34 @@ class StockPriceGUI:
             self.log(f"Update predictions error: {exc}")
 
     # ------------------------------------------------------------------ #
+    #  AUTO-UPDATE BACKGROUND THREADS                                      #
+    # ------------------------------------------------------------------ #
+
+    def _start_auto_threads(self) -> None:
+        threading.Thread(target=self._auto_update_data_loop, daemon=True).start()
+        threading.Thread(target=self._auto_predict_loop, daemon=True).start()
+
+    def _auto_update_data_loop(self) -> None:
+        """Round-robin adaptive updates across tracked symbols at 1000 calls/hour."""
+        interval = 3600 / 1000  # 3.6 s between each call
+        idx = 0
+        while True:
+            time.sleep(interval)
+            syms = self.store.symbols()
+            if not syms:
+                continue
+            sym = syms[idx % len(syms)]
+            idx += 1
+            self.store.update(sym)
+
+    def _auto_predict_loop(self) -> None:
+        """Refresh predictions for all tracked symbols every 5 minutes."""
+        while True:
+            time.sleep(300)
+            for sym in self.store.symbols():
+                self.store.predict(sym)
+
+    # ------------------------------------------------------------------ #
     #  MESSAGE QUEUE  (background threads → Tk main thread)               #
     # ------------------------------------------------------------------ #
 
@@ -758,6 +781,17 @@ class StockPriceGUI:
                     self._update_tree_row(payload)
                 elif msg_type == "chart":
                     self._draw_chart(payload)
+                elif msg_type == "pull_time":
+                    self.last_pull_var.set(payload)
+                elif msg_type == "pull_status":
+                    status, sym = payload
+                    ts = datetime.now().strftime("%H:%M:%S")
+                    if status == "ok":
+                        self.pull_dot.config(foreground="#2e7d32")
+                        self.last_pull_var.set(f"Last updated: {sym} @ {ts}")
+                    else:
+                        self.pull_dot.config(foreground="#c62828")
+                        self.last_pull_var.set(f"Last updated: {sym} @ {ts} — failed")
         except queue.Empty:
             pass
         self.root.after(100, self.process_queue)

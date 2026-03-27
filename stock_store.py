@@ -748,11 +748,13 @@ class StockStore:
 
             self.save_model_to_xlsx(symbol)
 
-            self._cb("refresh", symbol)
-            self._cb("chart",   symbol)
-            self._cb("log",     f"✓ {symbol} adaptively updated")
-            self._cb("status",  "Ready")
+            self._cb("refresh",      symbol)
+            self._cb("chart",        symbol)
+            self._cb("log",          f"✓ {symbol} adaptively updated")
+            self._cb("status",       "Ready")
+            self._cb("pull_status",  ("ok", symbol))
         except Exception as exc:
+            self._cb("pull_status",  ("error", symbol))
             self._cb("log", f"✗ {symbol} update error: {exc}")
 
     # ------------------------------------------------------------------ #

@@ -10,5 +10,9 @@
   "MSFT": {
     "lookback": 10,
     "epochs": 200
+  },
+  "AMZN": {
+    "lookback": 20,
+    "epochs": 200
   }
 }
