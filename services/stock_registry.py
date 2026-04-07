@@ -224,9 +224,8 @@ class StockRegistry:
             lookback = data["lookback"]
 
             self._archive_prediction(data)
-            raw_df = data.get("raw_df")
-            if raw_df is None:
-                raw_df = self._service.fetch_data(symbol)
+            raw_df = self._service.fetch_data(symbol)
+            data["raw_df"] = raw_df
             pred = self._service.predict(
                 symbol, raw_df, data["network"], data["scaler_params"], lookback_window=lookback
             )
@@ -256,9 +255,8 @@ class StockRegistry:
             )
             self._archive_prediction(data)
 
-            raw_df = data.get("raw_df")
-            if raw_df is None:
-                raw_df = self._service.fetch_data(symbol)
+            raw_df = self._service.fetch_data(symbol)
+            data["raw_df"] = raw_df
             pred = self._service.predict(
                 symbol, raw_df, data["network"], data["scaler_params"], lookback_window=lookback
             )

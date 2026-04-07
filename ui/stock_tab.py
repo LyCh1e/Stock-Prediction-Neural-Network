@@ -141,8 +141,7 @@ class StockManagerTab(ttk.Frame):
         self.epochs_var = tk.IntVar(value=200)
         ttk.Spinbox(ctrl, from_=50, to=500, textvariable=self.epochs_var, width=7).grid(row=0, column=5, padx=4)
 
-        ttk.Button(ctrl, text="Add & Train",               command=self._add_stock).grid(row=0, column=6, padx=5)
-        ttk.Button(ctrl, text="Quick Add (SPY/AAPL/MSFT)", command=self._quick_add).grid(row=0, column=7, padx=5)
+        ttk.Button(ctrl, text="Add & Train", command=self._add_stock).grid(row=0, column=6, padx=5)
 
     def _build_status_bar(self) -> None:
         bar = ttk.Frame(self)
@@ -213,11 +212,6 @@ class StockManagerTab(ttk.Frame):
             return
         self._on_add(symbol, self.lookback_var.get(), self.epochs_var.get())
         self.symbol_var.set("")
-
-    def _quick_add(self) -> None:
-        for sym in ["SPY", "AAPL", "MSFT"]:
-            self.symbol_var.set(sym)
-            self._add_stock()
 
     def _remove_selected(self) -> None:
         syms = self.selected_symbols()
