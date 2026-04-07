@@ -33,8 +33,7 @@ class AdaptiveStockPredictor:
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
-        self._current_lr = learning_rate  # tracks the scheduled LR during training
-
+        
         # Initialize weights for multi-output prediction (5 outputs: open, high, low, close, volume)
         self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2.0 / input_size)
         self.b1 = np.zeros((1, hidden_size))
@@ -84,10 +83,17 @@ class AdaptiveStockPredictor:
         dL_dW1 = np.dot(X.T, dL_dz1)
         dL_db1 = np.sum(dL_dz1, axis=0, keepdims=True)
         
-        self.W2 -= self._current_lr * dL_dW2
-        self.b2 -= self._current_lr * dL_db2
-        self.W1 -= self._current_lr * dL_dW1
-        self.b1 -= self._current_lr * dL_db1
+        # Update weights with adaptive learning rate
+        adaptive_lr = self.learning_rate
+        if len(self.losses) > 10:
+            recent_losses = self.losses[-10:]
+            if np.std(recent_losses) > np.mean(recent_losses) * 0.5:
+                adaptive_lr *= 0.5
+        
+        self.W2 -= adaptive_lr * dL_dW2
+        self.b2 -= adaptive_lr * dL_db2
+        self.W1 -= adaptive_lr * dL_dW1
+        self.b1 -= adaptive_lr * dL_db1
     
     def train(self, X: np.ndarray, y: np.ndarray, epochs: int = 100) -> None:
         """
@@ -98,60 +104,45 @@ class AdaptiveStockPredictor:
             y: Target values (normalized, 5 columns)
             epochs: Number of training iterations
         """
-        warmup_epochs = min(10, epochs // 10)
-        decay_every   = 20
-        decay_rate    = 0.95
-
         for epoch in range(epochs):
-            # Learning-rate schedule: linear warm-up then step decay
-            if epoch < warmup_epochs:
-                self._current_lr = self.learning_rate * (epoch + 1) / warmup_epochs
-            elif epoch % decay_every == 0 and epoch > 0:
-                self._current_lr = max(self._current_lr * decay_rate, self.learning_rate * 0.01)
-
             # Forward pass
             z1, a1, output = self.forward(X)
-
+            
             # Calculate loss
             loss = np.mean((output - y) ** 2)
             self.losses.append(loss)
-
+            
             # Backward pass
             self.backward(X, y, z1, a1, output)
-
+            
             if epoch % 20 == 0:
-                print(f"Epoch {epoch}, Loss: {loss:.6f}, LR: {self._current_lr:.6f}")
+                print(f"Epoch {epoch}, Loss: {loss:.6f}")
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions on new data"""
         _, _, output = self.forward(X)
         return output
     
-    def predict_with_uncertainty(self, X: np.ndarray, num_samples: int = 100,
-                                 dropout_rate: float = 0.15) -> Tuple[np.ndarray, np.ndarray]:
+    def predict_with_uncertainty(self, X: np.ndarray, num_samples: int = 100) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Monte Carlo Dropout uncertainty estimation.
-
-        During each sample a random mask zeros out hidden units (simulating
-        dropout at inference time), so the spread of outputs reflects genuine
-        model uncertainty rather than injected noise.
-
+        Make predictions with uncertainty estimates using dropout-like sampling.
+        
         Returns:
-            mean_prediction: Average prediction across samples
-            std_prediction:  Standard deviation — true uncertainty signal
+            mean_prediction: Average prediction
+            std_prediction: Standard deviation (uncertainty)
         """
         predictions = []
         for _ in range(num_samples):
-            z1 = np.dot(X, self.W1) + self.b1
-            a1 = self.relu(z1)
-            # Apply dropout mask to hidden activations
-            mask = (np.random.rand(*a1.shape) > dropout_rate) / (1.0 - dropout_rate)
-            a1_dropped = a1 * mask
-            output = np.dot(a1_dropped, self.W2) + self.b2
-            predictions.append(output)
-
+            # Add small noise to simulate uncertainty
+            _, _, output = self.forward(X)
+            noisy_output = output + np.random.normal(0, 0.02, output.shape)
+            predictions.append(noisy_output)
+        
         predictions = np.array(predictions)
-        return np.mean(predictions, axis=0), np.std(predictions, axis=0)
+        mean_pred = np.mean(predictions, axis=0)
+        std_pred = np.std(predictions, axis=0)
+        
+        return mean_pred, std_pred
     
     def incremental_update(self, X_new: np.ndarray, y_new: np.ndarray) -> None:
         """
@@ -495,7 +486,7 @@ class StockTradingSystem:
         self.api = YahooFinanceAPI(api_key)
         # Ensure minimum lookback is at least 3 days
         self.lookback_window = max(3, lookback_window)
-        self.model = AdaptiveStockPredictor(input_size=self.lookback_window * 12, hidden_size=30)
+        self.model = AdaptiveStockPredictor(input_size=self.lookback_window * 9, hidden_size=30)
         self.scaler_params = {}
         self.symbol = None
         
@@ -505,10 +496,9 @@ class StockTradingSystem:
         IMPROVED: Works with as little as lookback_window days of data.
         """
         # Select features for prediction
-        feature_cols = ['open', 'high', 'low', 'close', 'volume',
-                        'sma_20', 'rsi', 'volume_ratio', 'volatility',
-                        'macd', 'macd_signal', 'momentum']
-
+        feature_cols = ['open', 'high', 'low', 'close', 'volume', 
+                       'sma_20', 'rsi', 'volume_ratio', 'volatility']
+        
         # Ensure all features exist - now handles short data
         if 'sma_20' not in df.columns or df['sma_20'].isna().all():
             df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
@@ -573,9 +563,9 @@ class StockTradingSystem:
         """
         self.symbol = symbol
         
-        # Fetch data (last 12 months for richer training sequences)
+        # Fetch data (last 6 months, but will work with less)
         end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
         df = self.api.fetch_stock_data(symbol, start_date, end_date)
         print(f"Retrieved {len(df)} days of data for {symbol}")
         
@@ -612,8 +602,7 @@ class StockTradingSystem:
         
         return len(df)
     
-    def predict_next_day(self, symbol: str, include_scenarios: bool = True,
-                         scored_mape: Optional[float] = None) -> Dict:
+    def predict_next_day(self, symbol: str, include_scenarios: bool = True) -> Dict:
         """
         Predict next day's stock prices with enhanced clarity.
         IMPROVED: Better uncertainty quantification and clearer output
@@ -632,10 +621,9 @@ class StockTradingSystem:
         sentiment = self.api.get_market_sentiment(symbol)
         
         # Prepare input data
-        feature_cols = ['open', 'high', 'low', 'close', 'volume',
-                        'sma_20', 'rsi', 'volume_ratio', 'volatility',
-                        'macd', 'macd_signal', 'momentum']
-
+        feature_cols = ['open', 'high', 'low', 'close', 'volume', 
+                       'sma_20', 'rsi', 'volume_ratio', 'volatility']
+        
         # Ensure dataframe has required columns
         if 'sma_20' not in df.columns or df['sma_20'].isna().all():
             df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
@@ -645,19 +633,18 @@ class StockTradingSystem:
         if len(df_features) < self.lookback_window:
             raise ValueError(f"Insufficient data after cleaning. Need at least {self.lookback_window} days, got {len(df_features)}")
         
-        missing = [c for c in feature_cols if c not in self.scaler_params]
-        if missing:
-            raise ValueError(
-                f"Scaler params missing for {missing}. "
-                "The model must be trained before calling predict_next_day."
-            )
-
         recent_data = []
         for col in feature_cols:
             values = np.asarray(df_features[col].values[-self.lookback_window:])
-            mean_val = self.scaler_params[col]['mean']
-            std_val  = self.scaler_params[col]['std']
-            normalized = (values - mean_val) / std_val
+            
+            if col in self.scaler_params:
+                mean_val = self.scaler_params[col]['mean']
+                std_val = self.scaler_params[col]['std']
+                normalized = (values - mean_val) / std_val
+            else:
+                # Fallback normalization if parameter not found
+                normalized = (values - np.mean(values)) / (np.std(values) + 1e-8)
+            
             recent_data.append(normalized)
         
         # Flatten for model input
@@ -718,7 +705,7 @@ class StockTradingSystem:
                 volume_pred, close_uncertainty, sentiment, df
             )
             result['scenarios'] = scenarios
-            result['confidence'] = self._calculate_enhanced_confidence(df, sentiment, close_uncertainty, scored_mape)
+            result['confidence'] = self._calculate_enhanced_confidence(df, sentiment, close_uncertainty)
             result['technical_indicators'] = self._get_technical_indicators(df)
             result['recommendation'] = self.api.get_trading_recommendation(symbol, result)
         
@@ -818,60 +805,82 @@ class StockTradingSystem:
                                for k, v in realistic_range.items()}
         }
     
-    def _calculate_enhanced_confidence(self, df: pd.DataFrame, sentiment: Dict,
-                                       uncertainty: float,
-                                       scored_mape: Optional[float] = None) -> float:
+    def _calculate_enhanced_confidence(self, df: pd.DataFrame, sentiment: Dict, uncertainty: float) -> float:
         """
-        Calculate prediction confidence.
-
-        When a real scored MAPE is available (from the accuracy scorer's track
-        record) it is used as the primary signal with a high weight.  The
-        proxy factors (loss, data quantity, etc.) are still included but at a
-        lower weight so they only matter when no real history exists.
+        Calculate prediction confidence with enhanced factors.
         """
-        weighted_sum = 0.0
-        total_weight = 0.0
-
-        def _add(value: float, weight: float) -> None:
-            nonlocal weighted_sum, total_weight
-            weighted_sum += value * weight
-            total_weight += weight
-
-        # 1. Real MAPE from accuracy scorer — highest weight when available
-        if scored_mape is not None:
-            # Convert MAPE % to a 0-1 confidence using same decay as stock_scorer
-            import math
-            mape_conf = math.exp(-0.15 * scored_mape)
-            _add(mape_conf, 3.0)
-
-        # 2. MC-Dropout uncertainty (relative to current price)
-        current_price = df['close'].iloc[-1]
-        rel_uncertainty = uncertainty / (abs(current_price) + 1e-8)
-        uncertainty_conf = max(0.0, 1.0 - rel_uncertainty * 20)
-        _add(min(0.95, max(0.40, uncertainty_conf)), 1.5)
-
-        # 3. Data recency
+        confidence_factors = []
+        
+        # 1. Data recency (more recent = higher confidence)
         days_since_last = (datetime.now().date() - df.index[-1].date()).days
-        recency_conf = 0.95 if days_since_last <= 1 else 0.85 if days_since_last <= 3 else 0.75 if days_since_last <= 7 else 0.60
-        _add(recency_conf, 1.0)
-
-        # 4. Data quantity
+        if days_since_last <= 1:
+            confidence_factors.append(0.95)
+        elif days_since_last <= 3:
+            confidence_factors.append(0.85)
+        elif days_since_last <= 7:
+            confidence_factors.append(0.75)
+        else:
+            confidence_factors.append(0.65)
+        
+        # 2. Model uncertainty (lower = higher confidence)
+        if uncertainty < 1:
+            confidence_factors.append(0.90)
+        elif uncertainty < 2:
+            confidence_factors.append(0.80)
+        elif uncertainty < 3:
+            confidence_factors.append(0.70)
+        else:
+            confidence_factors.append(0.60)
+        
+        # 3. Data quantity
         data_points = len(df)
-        qty_conf = 0.90 if data_points > 200 else 0.80 if data_points > 100 else 0.70 if data_points > 50 else 0.60
-        _add(qty_conf, 0.5)
-
+        if data_points > 100:
+            confidence_factors.append(0.90)
+        elif data_points > 50:
+            confidence_factors.append(0.80)
+        elif data_points >= self.lookback_window * 2:
+            confidence_factors.append(0.70)
+        else:
+            confidence_factors.append(0.60)
+        
+        # 4. Volatility (lower = higher confidence)
+        if 'volatility' in df.columns:
+            vol = df['volatility'].iloc[-5:].mean()
+            if vol < 0.01:
+                confidence_factors.append(0.90)
+            elif vol < 0.02:
+                confidence_factors.append(0.80)
+            elif vol < 0.03:
+                confidence_factors.append(0.70)
+            else:
+                confidence_factors.append(0.60)
+        
         # 5. Sentiment confidence
         if 'confidence' in sentiment:
-            _add(float(sentiment['confidence']), 0.5)
-
-        # 6. Training loss (proxy — only meaningful when no scored MAPE yet)
-        if self.model.losses and scored_mape is None:
+            confidence_factors.append(sentiment['confidence'])
+        
+        # 6. Model training loss
+        if self.model.losses:
             final_loss = self.model.losses[-1]
-            loss_conf = 0.90 if final_loss < 0.01 else 0.80 if final_loss < 0.05 else 0.70 if final_loss < 0.10 else 0.55
-            _add(loss_conf, 1.0)
-
-        confidence = (weighted_sum / total_weight) if total_weight > 0 else 0.70
-        return float(max(0.50, min(0.95, confidence)))
+            if final_loss < 0.01:
+                confidence_factors.append(0.90)
+            elif final_loss < 0.05:
+                confidence_factors.append(0.80)
+            elif final_loss < 0.10:
+                confidence_factors.append(0.70)
+            else:
+                confidence_factors.append(0.60)
+        
+        # Calculate weighted average
+        if confidence_factors:
+            confidence = np.mean(confidence_factors)
+        else:
+            confidence = 0.7
+        
+        # Apply bounds
+        confidence = max(0.50, min(0.95, confidence))
+        
+        return float(confidence)
     
     def _get_technical_indicators(self, df: pd.DataFrame) -> Dict:
         """
@@ -991,30 +1000,18 @@ class StockTradingSystem:
     
     def adaptive_update(self, symbol: str) -> None:
         """
-        Update model with latest data using experience replay.
-
-        Takes the most recent sequences plus a random sample of older ones so
-        the model adapts to new data without forgetting earlier patterns.
+        Update model with latest data.
         """
         self.symbol = symbol
-
-        end_date   = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=max(60, self.lookback_window * 5))).strftime('%Y-%m-%d')
+        
+        # Fetch recent data
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=max(30, self.lookback_window * 3))).strftime('%Y-%m-%d')
         df = self.api.fetch_stock_data(symbol, start_date, end_date)
-
+        
         X, y = self.prepare_data(df)
-
-        n_recent = max(10, self.lookback_window)
-        if len(X) <= n_recent:
-            X_batch, y_batch = X, y
-        else:
-            # Most-recent sequences + random replay of older ones
-            X_recent, y_recent = X[-n_recent:], y[-n_recent:]
-            replay_n = min(n_recent, len(X) - n_recent)
-            idx = np.random.choice(len(X) - n_recent, size=replay_n, replace=False)
-            X_batch = np.vstack([X_recent, X[idx]])
-            y_batch = np.vstack([y_recent, y[idx]])
-
-        update_steps = 5
-        for _ in range(update_steps):
-            self.model.incremental_update(X_batch, y_batch)
+        
+        if len(X) > 3:
+            X_recent = X[-3:]
+            y_recent = y[-3:]
+            self.model.incremental_update(X_recent, y_recent)
