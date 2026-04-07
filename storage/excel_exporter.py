@@ -137,6 +137,58 @@ class ExcelExporter:
         df_out.index.name = "Date"
         return df_out
 
+    def load_pred_history(self, symbol: str) -> List[Dict]:
+        """
+        Reconstruct a pred_history list from stock_predictions.xlsx.
+
+        Reads the Best/Average/Worst Case scenario rows and groups them by
+        their shared "Exported At" timestamp to rebuild {date, avg, best, worst}
+        entries — one per export batch.
+        """
+        if not os.path.exists(self._pred_file):
+            return []
+        try:
+            df = pd.read_excel(self._pred_file, sheet_name=symbol, engine="openpyxl")
+        except Exception:
+            return []
+
+        scenario_rows = df[df["Scenario"].isin(["Best Case", "Average Case", "Worst Case"])]
+        if scenario_rows.empty:
+            return []
+
+        groups: Dict[str, Dict] = {}
+        for _, row in scenario_rows.iterrows():
+            key      = str(row["Exported At"])
+            scenario = str(row["Scenario"])
+            try:
+                close = float(row["Close"])
+            except (ValueError, TypeError):
+                continue
+            groups.setdefault(key, {})[scenario] = close
+
+        records = []
+        for exported_at, scenarios in groups.items():
+            if "Average Case" not in scenarios:
+                continue
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    dt = datetime.strptime(exported_at[:19], fmt) if len(fmt) == 19 else \
+                         datetime.strptime(exported_at[:16], fmt) if len(fmt) == 16 else \
+                         datetime.strptime(exported_at[:10], fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                continue
+            records.append({
+                "date":  dt,
+                "avg":   scenarios["Average Case"],
+                "best":  scenarios.get("Best Case",  scenarios["Average Case"]),
+                "worst": scenarios.get("Worst Case", scenarios["Average Case"]),
+            })
+
+        return records
+
     @staticmethod
     def _pred_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         pred = data.get("prediction")

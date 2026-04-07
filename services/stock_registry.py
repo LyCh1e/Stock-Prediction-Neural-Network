@@ -96,6 +96,30 @@ class StockRegistry:
         self._save_symbols()
         return True
 
+    def full_pred_history(self, symbol: str) -> list:
+        """
+        Return the merged prediction history for *symbol* from all sources,
+        one entry per date, with higher-priority sources overriding lower ones:
+          1. stock_predictions.xlsx  (lowest — export file)
+          2. stock_models_history.csv
+          3. in-memory pred_history  (highest — current session)
+        Sorted oldest → newest.
+        """
+        symbol    = symbol.upper()
+        excel     = self._exporter.load_pred_history(symbol)
+        persisted = self._hist_repo.load(symbol)
+        in_memory = (self._stocks.get(symbol) or {}).get("pred_history", [])
+
+        by_date: dict = {}
+        for entry in excel:
+            by_date[entry["date"].date()] = entry
+        for entry in persisted:
+            by_date[entry["date"].date()] = entry
+        for entry in in_memory:
+            by_date[entry["date"].date()] = entry
+
+        return sorted(by_date.values(), key=lambda e: e["date"])
+
     # ------------------------------------------------------------------ #
     #  Trigger background operations                                      #
     # ------------------------------------------------------------------ #
@@ -295,12 +319,20 @@ class StockRegistry:
     def _archive_prediction(self, data: StockEntry) -> None:
         old_pred = data.get("prediction")
         if old_pred and "scenarios" in old_pred:
-            data["pred_history"].append({
+            today = datetime.now().date()
+            entry = {
                 "date":  datetime.now(),
                 "avg":   old_pred["scenarios"]["average_case"]["close"],
                 "best":  old_pred["scenarios"]["best_case"]["close"],
                 "worst": old_pred["scenarios"]["worst_case"]["close"],
-            })
+            }
+            ph = data["pred_history"]
+            for i, existing in enumerate(ph):
+                if existing["date"].date() == today:
+                    ph[i] = entry
+                    break
+            else:
+                ph.append(entry)
             ph = data.get("pred_history", [])
             df = data.get("raw_df")
             cp = old_pred.get("current_price", 0.0)
