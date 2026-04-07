@@ -61,7 +61,7 @@ class StockStore:
         self._xlsx_lock = threading.Lock()  # serialise all xlsx writes
 
     # ------------------------------------------------------------------ #
-    #  Public registry accessors                                           #
+    #  Public registry accessors                                         #
     # ------------------------------------------------------------------ #
 
     @property
@@ -79,7 +79,7 @@ class StockStore:
         return symbol in self._stocks
 
     # ------------------------------------------------------------------ #
-    #  Create / Delete                                                     #
+    #  Create / Delete                                                   #
     # ------------------------------------------------------------------ #
 
     def add(self, symbol: str, lookback: int = 10, epochs: int = 200) -> bool:
@@ -122,7 +122,7 @@ class StockStore:
         return True
 
     # ------------------------------------------------------------------ #
-    #  Trigger background operations                                       #
+    #  Trigger background operations                                     #
     # ------------------------------------------------------------------ #
 
     def predict(self, symbol: str) -> None:
@@ -138,7 +138,7 @@ class StockStore:
         ).start()
 
     # ------------------------------------------------------------------ #
-    #  Symbol persistence                                                  #
+    #  Symbol persistence                                                #
     # ------------------------------------------------------------------ #
 
     def save_symbols(self) -> None:
@@ -191,7 +191,7 @@ class StockStore:
             self._cb("log", f"Warning: could not load symbols file: {exc}")
 
     # ------------------------------------------------------------------ #
-    #  DataFrame helpers                                                   #
+    #  DataFrame helpers                                                 #
     # ------------------------------------------------------------------ #
 
     def df_for_export(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -260,7 +260,7 @@ class StockStore:
         return df_pred
 
     # ------------------------------------------------------------------ #
-    #  Daily score builder                                                 #
+    #  Daily score builder                                               #
     # ------------------------------------------------------------------ #
 
     def _build_daily_score_rows(self, symbol: str) -> list:
@@ -365,7 +365,7 @@ class StockStore:
         return score_rows
 
     # ------------------------------------------------------------------ #
-    #  Excel: stock data                                                   #
+    #  Excel: stock data                                                 #
     # ------------------------------------------------------------------ #
 
     def export_stock_data(self) -> str:
@@ -430,7 +430,7 @@ class StockStore:
         return os.path.abspath(STOCK_DATA_FILE)
 
     # ------------------------------------------------------------------ #
-    #  Excel: predictions                                                  #
+    #  Excel: predictions                                                #
     # ------------------------------------------------------------------ #
 
     def export_predictions(self) -> str:
@@ -480,7 +480,7 @@ class StockStore:
         return os.path.abspath(PREDICTIONS_FILE)
 
     # ------------------------------------------------------------------ #
-    #  Accuracy scoring                                                    #
+    #  Accuracy scoring                                                  #
     # ------------------------------------------------------------------ #
 
     def score_symbol_entry(self, symbol: str) -> ScoreResult:
@@ -519,7 +519,7 @@ class StockStore:
         return results
 
     # ------------------------------------------------------------------ #
-    #  Model persistence (JSON + CSV)                                      #
+    #  Model persistence (JSON + CSV)                                    #
     # ------------------------------------------------------------------ #
 
     def save_model_to_xlsx(self, symbol: str) -> None:
@@ -758,7 +758,7 @@ class StockStore:
             self._cb("log", f"✗ {symbol} update error: {exc}")
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                     #
+    #  Private helpers                                                   #
     # ------------------------------------------------------------------ #
 
     def _archive_prediction(self, data: StockEntry) -> None:

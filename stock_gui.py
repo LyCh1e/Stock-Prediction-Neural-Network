@@ -50,7 +50,7 @@ class StockPriceGUI:
         self._start_auto_threads()
 
     # ------------------------------------------------------------------ #
-    #  Convenience shortcut                                                #
+    #  Convenience shortcut                                              #
     # ------------------------------------------------------------------ #
 
     @property
@@ -59,7 +59,7 @@ class StockPriceGUI:
         return self.store.stocks
 
     # ------------------------------------------------------------------ #
-    #  UI CONSTRUCTION                                                     #
+    #  UI CONSTRUCTION                                                   #
     # ------------------------------------------------------------------ #
 
     def create_widgets(self) -> None:
@@ -172,7 +172,7 @@ class StockPriceGUI:
         self._chart_toolbar: dict = {}
 
     # ------------------------------------------------------------------ #
-    #  LOGGING                                                             #
+    #  LOGGING                                                           #
     # ------------------------------------------------------------------ #
 
     def log(self, msg: str) -> None:
@@ -182,7 +182,7 @@ class StockPriceGUI:
         print(msg)
 
     # ------------------------------------------------------------------ #
-    #  TREE HELPERS                                                        #
+    #  TREE HELPERS                                                      #
     # ------------------------------------------------------------------ #
 
     def _tree_has(self, iid: str) -> bool:
@@ -227,7 +227,7 @@ class StockPriceGUI:
         return list(self.tree.selection())
 
     # ------------------------------------------------------------------ #
-    #  GRADIENT COLOUR HELPERS                                             #
+    #  GRADIENT COLOUR HELPERS                                           #
     # ------------------------------------------------------------------ #
 
     _SIGNAL_MAP     = {"STRONG SELL": 0, "SELL": 1, "HOLD": 2, "BUY": 3, "STRONG BUY": 4}
@@ -249,7 +249,7 @@ class StockPriceGUI:
         return (None, None) if idx == -1 else (self._SENTIMENT_COLOURS[idx], self._SENTIMENT_FG[idx])
 
     # ------------------------------------------------------------------ #
-    #  CHART MANAGEMENT                                                    #
+    #  CHART MANAGEMENT                                                  #
     # ------------------------------------------------------------------ #
 
     def _ensure_chart_tab(self, symbol: str) -> None:
@@ -495,7 +495,7 @@ class StockPriceGUI:
         self.log("Charts refreshed")
 
     # ------------------------------------------------------------------ #
-    #  STOCK MANAGEMENT ACTIONS                                            #
+    #  STOCK MANAGEMENT ACTIONS                                          #
     # ------------------------------------------------------------------ #
 
     def add_stock(self) -> None:
@@ -532,7 +532,7 @@ class StockPriceGUI:
                 self.log(f"Removed {sym}")
 
     # ------------------------------------------------------------------ #
-    #  PREDICT / UPDATE ACTIONS                                            #
+    #  PREDICT / UPDATE ACTIONS                                          #
     # ------------------------------------------------------------------ #
 
     def predict_selected(self) -> None:
@@ -560,7 +560,7 @@ class StockPriceGUI:
             self.store.update(sym)
 
     # ------------------------------------------------------------------ #
-    #  ACCURACY SCORING ACTIONS                                            #
+    #  ACCURACY SCORING ACTIONS                                          #
     # ------------------------------------------------------------------ #
 
     def score_selected(self) -> None:
@@ -676,7 +676,7 @@ class StockPriceGUI:
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=6)
 
     # ------------------------------------------------------------------ #
-    #  EXCEL ACTIONS                                                       #
+    #  EXCEL ACTIONS                                                     #
     # ------------------------------------------------------------------ #
 
     def export_stock_data(self) -> None:
@@ -728,7 +728,7 @@ class StockPriceGUI:
             self.log(f"Update predictions error: {exc}")
 
     # ------------------------------------------------------------------ #
-    #  AUTO-UPDATE BACKGROUND THREADS                                      #
+    #  AUTO-UPDATE BACKGROUND THREADS                                    #
     # ------------------------------------------------------------------ #
 
     def _start_auto_threads(self) -> None:
@@ -756,7 +756,7 @@ class StockPriceGUI:
                 self.store.predict(sym)
 
     # ------------------------------------------------------------------ #
-    #  MESSAGE QUEUE  (background threads → Tk main thread)               #
+    #  MESSAGE QUEUE  (background threads → Tk main thread)              #
     # ------------------------------------------------------------------ #
 
     def process_queue(self) -> None:
@@ -788,7 +788,7 @@ class StockPriceGUI:
         self.root.after(100, self.process_queue)
 
     # ------------------------------------------------------------------ #
-    #  MARKET STATUS                                                       #
+    #  MARKET STATUS                                                     #
     # ------------------------------------------------------------------ #
 
     def _tick_market_status(self) -> None:

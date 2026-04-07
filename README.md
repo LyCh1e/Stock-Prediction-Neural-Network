@@ -10,11 +10,12 @@ A multi-file neural network system that fetches stock data from **Yahoo Finance*
 - **Adaptive Learning**: Continues learning from new data on each update cycle
 - **Technical Indicators**: RSI, MACD, SMA (20/50), Bollinger Bands, Volume Ratio, Volatility, Momentum
 - **Market Sentiment Analysis**: Bullish/bearish scoring across multiple indicator signals
-- **Model Persistence (xlsx)**: Network weights, scaler params, and prediction history are saved to `stock_models.xlsx` automatically after every train, predict, and update — so the model resumes from where it left off on next startup
+- **Model Persistence (JSON + CSV)**: Network weights, scaler params, and prediction history saved to `stock_models.json` / `stock_models_history.csv` after every train, predict, and update — model resumes from where it left off on next startup
 - **Accuracy Scoring**: Composite 0–100 score with letter grades (A+ → F) measuring price error, directional accuracy, and within-range hits
 - **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
-- **Interactive Charts**: Past predictions overlaid on actual price data; future forecast with best/worst band; zoom / pan / save toolbar
-- **Background Processing**: All training and prediction runs in daemon threads — the UI never freezes
+- **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
+- **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
+- **Background Auto-Updates**: Data refreshed at ~1000 calls/hour across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
 - **Excel Export**: OHLCV history → `stock_data.xlsx`, prediction scenarios + daily scores → `stock_predictions.xlsx`
 
 ## Quick Start
@@ -35,8 +36,8 @@ No API key setup required. Add a symbol and training begins immediately.
 ## Installation
 
 1. **Clone or download the repository**
-```
-python stock_gui.py
+2. **Install dependencies**
+```bash
 pip install -r requirements.txt
 ```
 
@@ -52,7 +53,7 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 ### 2. Data & Thread Manager (`stock_store.py`)
 - `StockStore` — central registry for all tracked symbols
 - Runs training, prediction, and update jobs in background threads
-- **xlsx persistence**: `save_model_to_xlsx` / `load_model_from_xlsx` save and restore network weights, scaler params, and prediction history to `stock_models.xlsx`
+- **JSON persistence**: `save_model_to_xlsx` / `load_model_from_xlsx` save and restore network weights and scaler params to `stock_models.json`; prediction history saved to `stock_models_history.csv`
 - Appends OHLCV rows to `stock_data.xlsx` and prediction rows to `stock_predictions.xlsx`
 
 ### 3. Accuracy Scorer (`stock_scorer.py`)
@@ -70,8 +71,8 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 
 ### 4. GUI (`stock_gui.py`)
 - `StockPriceGUI` — two-tab Tkinter interface:
-  - **Stock Manager tab**: tracked symbols table (symbol, price, sentiment, confidence, signal, score, status), action buttons, activity log
-  - **Charts tab**: one sub-tab per symbol with actual price history, past-prediction overlay, future forecast band, and a zoom/pan/save toolbar
+  - **Stock Manager tab**: tracked symbols table (symbol, price, sentiment, confidence, signal, status), market status indicator, action buttons, activity log
+  - **Charts tab**: one sub-tab per symbol with actual price history, future forecast band (best/worst/avg), and a zoom/pan/save toolbar
 
 ### 5. Launcher (`launch.py`)
 - Checks all dependencies before launching
@@ -86,30 +87,28 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 
 ```
 1. python launch.py   (or python stock_gui.py)
-2. Enter a stock symbol (e.g. AAPL) and click "Add & Train Stock"
-3. Watch training progress in the Activity Log
+2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
+3. Watch training progress in the Log
 4. Switch to the Charts tab to see the price history and forecast
-5. Use "Score Selected" / "Score All" to evaluate prediction accuracy
-6. Click "Predict Selected" or "Predict All" to refresh forecasts
-7. Click "Update Selected" or "Update All" for adaptive incremental learning
-8. Click "Export Stock Data" or "Export Predictions" to write xlsx files
+5. Click "View Score" to evaluate prediction accuracy for a selected stock
+6. Click "Predict All" to refresh forecasts
+7. Click "Update All" for adaptive incremental learning
+8. Click "Update Stock Data" or "Update Predictions" to write xlsx files
 ```
 
 ### GUI Button Reference
 
 | Button | Action |
 |--------|--------|
-| Add & Train Stock | Add a symbol and train the network (resumes from saved weights if available) |
-| Predict Selected | Generate a new prediction for the selected stock(s) |
-| Update Selected | Adaptive incremental update for selected stock(s) |
+| Add & Train | Add a symbol and train the network (resumes from saved weights if available) |
+| Quick Add (SPY/AAPL/MSFT) | Add the three default symbols at once |
 | Predict All | Refresh predictions for every tracked stock |
 | Update All | Adaptive update for every tracked stock |
-| Score Selected | Compute accuracy score for selected stock(s) |
-| Score All | Compute accuracy scores for all tracked stocks |
-| View Score | Open detailed per-prediction breakdown window |
 | Remove Selected | Remove selected stock(s) from the tracker |
-| Export Stock Data | Write OHLCV history to `stock_data.xlsx` |
-| Export Predictions | Write prediction scenarios + daily scores to `stock_predictions.xlsx` |
+| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` |
+| Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
+| View Score | Open detailed accuracy score window for the selected stock |
+| Refresh Charts | Redraw all chart tabs with latest data |
 
 ### Programmatic Usage
 
@@ -135,10 +134,6 @@ print(f"Best close:     ${scenarios['best_case']['close']:.2f}")
 print(f"Average close:  ${scenarios['average_case']['close']:.2f}")
 print(f"Worst close:    ${scenarios['worst_case']['close']:.2f}")
 
-# Save / load weights manually (pickle)
-system.model.save_model("aapl_model.pkl")
-system.model.load_model("aapl_model.pkl")
-
 # Adaptive incremental update with latest data
 system.adaptive_update("AAPL")
 ```
@@ -152,9 +147,9 @@ from stock_scorer import score_symbol
 # raw_df:       OHLCV DataFrame from StockTradingSystem
 result = score_symbol(pred_history, raw_df, current_price)
 
-print(result.score)              # e.g. 73.4
-print(result.letter_grade)       # e.g. "B"
-print(result.summary)            # human-readable paragraph
+print(result.score)               # e.g. 73.4
+print(result.letter_grade)        # e.g. "B"
+print(result.summary)             # human-readable paragraph
 print(result.matched_predictions)
 ```
 
@@ -198,7 +193,8 @@ Three scenarios are derived from the base prediction by applying volatility mult
 _train_thread
     → load_model_from_xlsx  (if saved weights exist → resume & short retrain)
     → train_model           (full epochs if new; ~20% epochs if resuming)
-    → save_model_to_xlsx    (weights + scaler + pred_history)
+    → save_model_to_xlsx    (weights + scaler → stock_models.json,
+                             pred_history    → stock_models_history.csv)
 
 _predict_thread / _update_thread
     → predict / adaptive_update
@@ -212,7 +208,27 @@ _predict_thread / _update_thread
 |------|---------|
 | `stock_data.xlsx` | One sheet per symbol — append-only OHLCV history |
 | `stock_predictions.xlsx` | One sheet per symbol — scenario rows + daily score rows |
-| `stock_models.xlsx` | `{SYMBOL}` sheet: latest network weights (JSON) + scaler params; `{SYMBOL}_history` sheet: full prediction log |
+
+### Persistence File Layout
+
+| File | Contents |
+|------|---------|
+| `stock_models.json` | Network weights and scaler params per symbol |
+| `stock_models_history.csv` | Full prediction log (Symbol, Date, Avg, Best, Worst) |
+| `tracked_symbols.json` | Tracked symbols with lookback and epoch settings |
+
+### Market Status Indicator
+
+The status bar shows the current US market session based on Eastern time:
+
+| Status | Hours (ET) | Colour |
+|--------|-----------|--------|
+| Pre-Market | 4:00 AM – 9:30 AM | Orange |
+| Market Open | 9:30 AM – 4:00 PM | Green |
+| After-Hours | 4:00 PM – 8:00 PM | Blue |
+| Closed / Weekend | All other times | Grey |
+
+Updates every 60 seconds automatically.
 
 ## Key Parameters
 
@@ -230,15 +246,17 @@ _predict_thread / _update_thread
 | File | Purpose |
 |------|---------|
 | `stock_volume_predictor.py` | Neural network, Yahoo Finance API, trading system |
-| `stock_store.py` | Data manager, background threads, xlsx persistence |
+| `stock_store.py` | Data manager, background threads, model persistence |
 | `stock_scorer.py` | Prediction accuracy scoring and letter grades |
 | `stock_gui.py` | Tkinter GUI — stock manager and interactive charts |
 | `stock_auto_updater.py` | Background auto-refresh service with JSON cache |
 | `launch.py` | Dependency checker and launcher |
 | `requirements.txt` | Python package dependencies |
+| `tracked_symbols.json` | Auto-generated: saved symbols and their settings |
+| `stock_models.json` | Auto-generated: saved network weights + scaler params |
+| `stock_models_history.csv` | Auto-generated: full prediction history log |
 | `stock_data.xlsx` | Auto-generated: OHLCV history |
 | `stock_predictions.xlsx` | Auto-generated: prediction scenarios + scores |
-| `stock_models.xlsx` | Auto-generated: saved network weights + history |
 
 ## Technical Indicators
 
@@ -266,13 +284,13 @@ pip install numpy pandas matplotlib yfinance openpyxl requests
 
 **GUI not launching:**
 ```bash
-python --version   # requires Python 3.7+
+python --version   # requires Python 3.9+
 python launch.py   # checks dependencies before opening the GUI
 ```
 
-**`stock_models.xlsx` weights not loading:**
-- The file is created after the first successful training run
-- If the saved `input_size` doesn't match the current `lookback_window`, the model trains from scratch and overwrites the old weights
+**Weights not loading on startup:**
+- `stock_models.json` is created after the first successful training run
+- If the saved `input_size` doesn't match the current `lookback_window`, the model trains from scratch and overwrites the old entry
 
 ## Disclaimer
 
