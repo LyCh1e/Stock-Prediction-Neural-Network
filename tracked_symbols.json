@@ -14,5 +14,9 @@
   "AMZN": {
     "lookback": 20,
     "epochs": 200
+  },
+  "META": {
+    "lookback": 30,
+    "epochs": 250
   }
 }
