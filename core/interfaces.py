@@ -53,6 +53,15 @@ class IModelRepository(ABC):
         timestamp, final_loss — or None if no saved data exists.
         """
 
+    @abstractmethod
+    def restore_weights(self, symbol: str, model) -> Optional[Dict]:
+        """
+        Load saved weights into *model* in-place.
+
+        Returns the scaler_params dict if successful, or None if no saved data
+        exists or the saved shape does not match the current model.
+        """
+
 
 class IHistoryRepository(ABC):
     """Responsible for persisting and restoring prediction history."""

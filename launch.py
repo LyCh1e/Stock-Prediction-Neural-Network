@@ -7,8 +7,8 @@ Entry point for the Stock Price Predictor.
 Checks dependencies, then delegates to ui.app.main().
 """
 
+import os
 import sys
-
 
 def check_dependencies() -> list:
     required = ["numpy", "pandas", "requests", "matplotlib", "tkinter", "yfinance", "openpyxl"]
