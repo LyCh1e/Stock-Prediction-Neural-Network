@@ -696,11 +696,11 @@ class StockPriceGUI:
         try:
             path = self.store.update_stock_data()
             messagebox.showinfo("Updated", f"Stock data updated in:\n{path}")
-        except PermissionError:
-            messagebox.showerror("Error", f"{STOCK_DATA_FILE} is open. Close it and retry.")
         except Exception as exc:
-            messagebox.showerror("Error", str(exc))
-            self.log(f"Update stock data error: {exc}")
+            if isinstance(exc, PermissionError):
+                messagebox.showerror("Error", f"{STOCK_DATA_FILE} is open. Close it and retry.")
+            else:
+                messagebox.showerror("Error", f"Could not update stock data:\n{exc}")
 
     def export_predictions(self) -> None:
         if not any(d.get("prediction") is not None for d in self.stocks.values()):

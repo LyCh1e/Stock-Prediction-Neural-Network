@@ -393,7 +393,10 @@ class StockStore:
 
         from openpyxl import load_workbook
 
-        wb = load_workbook(STOCK_DATA_FILE)
+        try:
+            wb = load_workbook(STOCK_DATA_FILE)
+        except Exception:
+            return self.export_stock_data()
 
         for symbol in self._stocks:
             df_new = self.df_for_export(symbol)
