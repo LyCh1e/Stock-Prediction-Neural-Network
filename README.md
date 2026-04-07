@@ -46,26 +46,29 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 ## System Architecture
 
 ### 1. Neural Network Core (`stock_volume_predictor.py`)
-- `AdaptiveStockPredictor` — custom two-layer neural network (ReLU hidden, linear output) with adaptive learning rate
-- `YahooFinanceAPI` — fetches 180 days of OHLCV history via `yfinance`
+- `AdaptiveStockPredictor` — custom two-layer neural network (ReLU hidden, linear output) with a warm-up + step-decay learning rate schedule
+- `YahooFinanceAPI` — fetches 365 days of OHLCV history via `yfinance`
 - `StockTradingSystem` — orchestrates data fetching, feature engineering, training, prediction, and adaptive updates
 
 ### 2. Data & Thread Manager (`stock_store.py`)
 - `StockStore` — central registry for all tracked symbols
 - Runs training, prediction, and update jobs in background threads
 - **JSON persistence**: `save_model_to_xlsx` / `load_model_from_xlsx` save and restore network weights and scaler params to `stock_models.json`; prediction history saved to `stock_models_history.csv`
+- **Shape-mismatch guard**: if saved `input_size` doesn't match the current feature count, the old weights are discarded and the model retrains from scratch automatically
 - Appends OHLCV rows to `stock_data.xlsx` and prediction rows to `stock_predictions.xlsx`
 
 ### 3. Accuracy Scorer (`stock_scorer.py`)
 - Matches past predictions to actual closing prices
-- Computes a composite score (0–100) from three components:
+- Computes a composite score (0–100) from four components:
 
 | Component | Weight | What it measures |
 |-----------|--------|-----------------|
-| MAPE accuracy | 50% | How close the predicted price was |
-| Directional accuracy | 30% | Did the model get up/down right? |
-| Within-range accuracy | 20% | Did the actual close land inside the best/worst band? |
+| Close MAPE accuracy | 40% | How close the predicted close was |
+| Directional accuracy | 25% | Did the model get up/down right? |
+| High/Low accuracy | 20% | How close the predicted high & low were |
+| Within-range accuracy | 15% | Did the actual close land inside the best/worst band? |
 
+- `pred_history` entries store full OHLCV predictions (`pred_open`, `pred_high`, `pred_low`, `pred_volume`) to enable the High/Low component
 - Letter grades: A+ (≥93) → F (<20)
 - Scores update automatically after every prediction cycle
 
@@ -90,10 +93,9 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
 3. Watch training progress in the Log
 4. Switch to the Charts tab to see the price history and forecast
-5. Click "View Score" to evaluate prediction accuracy for a selected stock
-6. Click "Predict All" to refresh forecasts
-7. Click "Update All" for adaptive incremental learning
-8. Click "Update Stock Data" or "Update Predictions" to write xlsx files
+5. Click "Predict All" to refresh forecasts
+6. Click "Update All" for adaptive incremental learning
+7. Click "Update Stock Data" or "Update Predictions" to write xlsx files
 ```
 
 ### GUI Button Reference
@@ -105,9 +107,8 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 | Predict All | Refresh predictions for every tracked stock |
 | Update All | Adaptive update for every tracked stock |
 | Remove Selected | Remove selected stock(s) from the tracker |
-| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` |
+| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
-| View Score | Open detailed accuracy score window for the selected stock |
 | Refresh Charts | Redraw all chart tabs with latest data |
 
 ### Programmatic Usage
@@ -157,20 +158,20 @@ print(result.matched_predictions)
 
 ### Data Pipeline
 ```
-Yahoo Finance (yfinance) → 180-day OHLCV → Technical Indicators
+Yahoo Finance (yfinance) → 365-day OHLCV → Technical Indicators
     → Normalization → Sliding-window sequences → Neural Network
 ```
 
 ### Neural Network Architecture
 ```
-Input Layer  (lookback_window × 9 features)
+Input Layer  (lookback_window × 12 features)
       ↓
-Hidden Layer (30 neurons, ReLU)
+Hidden Layer (30 neurons, ReLU + Monte Carlo Dropout at inference)
       ↓
 Output Layer (5 outputs: Open, High, Low, Close, Volume)
 ```
 
-**9 features per time step:**
+**12 features per time step:**
 1. Open
 2. High
 3. Low
@@ -180,6 +181,9 @@ Output Layer (5 outputs: Open, High, Low, Close, Volume)
 7. RSI (14-period)
 8. Volume Ratio (vs 20-day average)
 9. Volatility (20-day std)
+10. MACD
+11. MACD Signal
+12. Price Momentum (10-day)
 
 ### Scenario Generation
 Three scenarios are derived from the base prediction by applying volatility multipliers shaped by:
@@ -236,9 +240,9 @@ Updates every 60 seconds automatically.
 |-----------|---------|-------------|
 | `lookback_window` | 10 | Historical days used as input to the network |
 | `hidden_size` | 30 | Neurons in the hidden layer |
-| `learning_rate` | 0.001 | Initial learning rate |
+| `learning_rate` | 0.001 | Initial LR; warms up over first 10 epochs then decays 5% every 20 epochs |
 | `epochs` | 200 | Training iterations (full train); ~20% for resume |
-| `input_features` | 9 | Features per time step |
+| `input_features` | 12 | Features per time step |
 | `outputs` | 5 | Predicted values (OHLCV) |
 
 ## Files in the Project
@@ -290,7 +294,10 @@ python launch.py   # checks dependencies before opening the GUI
 
 **Weights not loading on startup:**
 - `stock_models.json` is created after the first successful training run
-- If the saved `input_size` doesn't match the current `lookback_window`, the model trains from scratch and overwrites the old entry
+- If the saved `input_size` doesn't match the current feature count (e.g. after a feature set change), the model logs a warning and retrains from scratch — old weights are not silently discarded without notice
+
+**"Update Stock Data" fails:**
+- If `stock_data.xlsx` is corrupt or empty, it will be automatically recreated from the current in-memory data
 
 ## Disclaimer
 
