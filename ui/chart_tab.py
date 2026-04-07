@@ -45,6 +45,7 @@ class ChartsTab(ttk.Frame):
         self._tabs:    Dict[str, ttk.Frame]             = {}
         self._canvas:  Dict[str, FigureCanvasTkAgg]     = {}
         self._toolbar: Dict[str, NavigationToolbar2Tk]  = {}
+        self._cids:    Dict[str, int]                   = {}
         self._store_ref = None   # set by the app after construction
 
     def set_store(self, store) -> None:
@@ -65,6 +66,16 @@ class ChartsTab(ttk.Frame):
         if symbol in self._tabs:
             frame = self._tabs.pop(symbol)
             self._nb.forget(self._nb.index(frame))
+        if symbol in self._cids and symbol in self._canvas:
+            try:
+                self._canvas[symbol].mpl_disconnect(self._cids.pop(symbol))
+            except Exception:
+                pass
+        if symbol in self._canvas:
+            try:
+                plt.close(self._canvas[symbol].figure)
+            except Exception:
+                pass
         self._canvas.pop(symbol, None)
         self._toolbar.pop(symbol, None)
 
@@ -90,9 +101,18 @@ class ChartsTab(ttk.Frame):
     def _render(self, symbol: str, data: dict) -> None:
         frame = self._tabs[symbol]
 
-        # Destroy old canvas + toolbar
+        # Disconnect old event handler to break the on_move ↔ canvas reference
+        # cycle before the cyclic GC has a chance to collect it from a bg thread.
+        if symbol in self._cids and symbol in self._canvas:
+            try:
+                self._canvas[symbol].mpl_disconnect(self._cids.pop(symbol))
+            except Exception:
+                pass
+
+        # Close old figure and destroy old canvas + toolbar
         if symbol in self._canvas:
             try:
+                plt.close(self._canvas[symbol].figure)
                 self._canvas[symbol].get_tk_widget().destroy()
             except Exception:
                 pass
@@ -253,5 +273,4 @@ class ChartsTab(ttk.Frame):
             info_box.set_text(text); info_box.set_visible(True)
             canvas.draw_idle()
 
-        canvas.mpl_connect("motion_notify_event", on_move)
-        plt.close(fig)
+        self._cids[symbol] = canvas.mpl_connect("motion_notify_event", on_move)

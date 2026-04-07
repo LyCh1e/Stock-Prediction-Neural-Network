@@ -11,6 +11,7 @@ interface, not about fetchers, repositories, or ML internals.
 
 from __future__ import annotations
 
+import gc
 import queue
 import threading
 import time
@@ -43,9 +44,12 @@ class StockPriceApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        gc.disable()  # prevent background threads from triggering GC on wrong thread
+
         self._build_tabs()
         self._process_queue()
         self._tick_market_status()
+        self._run_gc()
         self.registry.load_symbols()
         self._start_auto_threads()
 
@@ -276,9 +280,14 @@ class StockPriceApp:
     #  Auto-update background threads                                     #
     # ------------------------------------------------------------------ #
 
+    def _run_gc(self) -> None:
+        gc.collect()
+        if self._running:
+            self.root.after(5000, self._run_gc)
+
     def _on_close(self) -> None:
         self._running = False
-        self.root.destroy()
+        self.root.quit()
 
     def _start_auto_threads(self) -> None:
         threading.Thread(target=self._auto_update_loop,  daemon=True).start()
@@ -312,7 +321,8 @@ class StockPriceApp:
 
     def post(self, msg_type: str, payload) -> None:
         """Thread-safe: post a message for the Tk main thread to handle."""
-        self._queue.put((msg_type, payload))
+        if self._running:
+            self._queue.put((msg_type, payload))
 
     def _process_queue(self) -> None:
         try:
@@ -334,7 +344,8 @@ class StockPriceApp:
                     self._stock_tab.set_pull_status(status, sym)
         except queue.Empty:
             pass
-        self.root.after(100, self._process_queue)
+        if self._running:
+            self.root.after(100, self._process_queue)
 
     # ------------------------------------------------------------------ #
     #  Market status ticker                                               #
@@ -414,6 +425,7 @@ def main() -> None:
     root = tk.Tk()
     create_app(root)
     root.mainloop()
+    root.destroy()
 
 
 if __name__ == "__main__":
