@@ -1,0 +1,252 @@
+"""
+src/storage/excel_exporter.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Responsible for exporting OHLCV data and predictions to Excel files.
+
+Single Responsibility: Excel I/O only. No ML, no registry logic.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import threading
+from datetime import datetime
+from typing import Dict, List, Optional
+
+import pandas as pd
+
+from src.scoring.scorer import _parse_records, _match_actuals, _prev_close
+
+_LOCK = threading.Lock()
+
+STOCK_DATA_FILE  = "stock_data.xlsx"
+PREDICTIONS_FILE = "stock_predictions.xlsx"
+
+
+class ExcelExporter:
+    """Exports OHLCV history and prediction scenarios to Excel files."""
+
+    def __init__(
+        self,
+        stock_data_file: str = STOCK_DATA_FILE,
+        predictions_file: str = PREDICTIONS_FILE,
+    ) -> None:
+        self._data_file = stock_data_file
+        self._pred_file = predictions_file
+
+    # ------------------------------------------------------------------ #
+    #  OHLCV data                                                         #
+    # ------------------------------------------------------------------ #
+
+    def export_stock_data(self, stocks: Dict) -> str:
+        with _LOCK:
+            with pd.ExcelWriter(self._data_file, engine="openpyxl") as writer:
+                for symbol, data in stocks.items():
+                    df_out = self._df_for_export(data)
+                    if df_out is not None:
+                        df_out.to_excel(writer, sheet_name=symbol)
+        return os.path.abspath(self._data_file)
+
+    def update_stock_data(self, stocks: Dict) -> str:
+        if not os.path.exists(self._data_file):
+            return self.export_stock_data(stocks)
+
+        from openpyxl import load_workbook
+        try:
+            wb = load_workbook(self._data_file)
+        except Exception:
+            return self.export_stock_data(stocks)
+
+        with _LOCK:
+            for symbol, data in stocks.items():
+                df_new = self._df_for_export(data)
+                if df_new is None:
+                    continue
+                if symbol in wb.sheetnames:
+                    existing = pd.read_excel(
+                        self._data_file, sheet_name=symbol,
+                        index_col=0, engine="openpyxl",
+                    )
+                    existing.index = pd.to_datetime(existing.index).date
+                    last_date  = existing.index.max()
+                    df_append  = df_new[df_new.index > last_date]
+                    if df_append.empty:
+                        continue
+                    df_combined = pd.concat([existing, df_append])
+                    del wb[symbol]
+                    wb.save(self._data_file)
+                else:
+                    df_combined = df_new
+                with pd.ExcelWriter(
+                    self._data_file, engine="openpyxl",
+                    mode="a", if_sheet_exists="replace",
+                ) as writer:
+                    df_combined.to_excel(writer, sheet_name=symbol)
+
+        return os.path.abspath(self._data_file)
+
+    # ------------------------------------------------------------------ #
+    #  Predictions                                                        #
+    # ------------------------------------------------------------------ #
+
+    def export_predictions(self, stocks: Dict) -> str:
+        with _LOCK:
+            with pd.ExcelWriter(self._pred_file, engine="openpyxl") as writer:
+                for symbol, data in stocks.items():
+                    df_pred = self._pred_df_for_export(symbol, data)
+                    if df_pred is not None:
+                        df_pred.to_excel(writer, sheet_name=symbol, index=False)
+        return os.path.abspath(self._pred_file)
+
+    def update_predictions(self, stocks: Dict) -> str:
+        if not os.path.exists(self._pred_file):
+            return self.export_predictions(stocks)
+
+        with _LOCK:
+            for symbol, data in stocks.items():
+                df_new = self._pred_df_for_export(symbol, data)
+                if df_new is None:
+                    continue
+                try:
+                    existing    = pd.read_excel(self._pred_file, sheet_name=symbol, engine="openpyxl")
+                    df_combined = pd.concat([existing, df_new], ignore_index=True)
+                except Exception:
+                    df_combined = df_new
+                with pd.ExcelWriter(
+                    self._pred_file, engine="openpyxl",
+                    mode="a", if_sheet_exists="replace",
+                ) as writer:
+                    df_combined.to_excel(writer, sheet_name=symbol, index=False)
+
+        return os.path.abspath(self._pred_file)
+
+    # ------------------------------------------------------------------ #
+    #  Private helpers                                                    #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _df_for_export(data: Dict) -> Optional[pd.DataFrame]:
+        df = data.get("raw_df")
+        if df is None:
+            return None
+        df_out = df[["open", "high", "low", "close", "volume"]].copy()
+        df_out.columns = ["Open", "High", "Low", "Close", "Volume"]
+        if hasattr(df_out.index, "tz") and df_out.index.tz is not None:
+            df_out.index = df_out.index.tz_localize(None)
+        df_out.index = df_out.index.date
+        df_out.index.name = "Date"
+        return df_out
+
+    @staticmethod
+    def _pred_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
+        pred = data.get("prediction")
+        if not pred or "scenarios" not in pred:
+            return None
+
+        sc   = pred["scenarios"]
+        rows = []
+        for label, key in [
+            ("Best Case",    "best_case"),
+            ("Average Case", "average_case"),
+            ("Worst Case",   "worst_case"),
+        ]:
+            s = sc[key]
+            rows.append({
+                "Exported At":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Scenario":       label,
+                "Open":           round(s["open"],  2),
+                "High":           round(s["high"],  2),
+                "Low":            round(s["low"],   2),
+                "Close":          round(s["close"], 2),
+                "Profit %":       round(s["profit_potential"], 2),
+                "Current Price":  round(pred["current_price"], 2),
+                "Confidence":     round(pred["confidence"] * 100, 1),
+                "Signal":         pred.get("recommendation", "").replace("_", " "),
+                "Score": "", "Grade": "", "Avg Error %": "",
+                "Dir Accuracy %": "", "In Range %": "", "Matched Preds": "",
+            })
+
+        score_rows = ExcelExporter._build_daily_score_rows(symbol, data)
+        df_pred    = pd.DataFrame(rows)
+        if score_rows:
+            df_pred = pd.concat([df_pred, pd.DataFrame(score_rows)], ignore_index=True)
+        return df_pred
+
+    @staticmethod
+    def _build_daily_score_rows(symbol: str, data: Dict) -> List[Dict]:
+        ph = data.get("pred_history", [])
+        df = data.get("raw_df")
+        if not ph or df is None:
+            return []
+
+        records = _parse_records(ph)
+        records = _match_actuals(records, df)
+        matched = [r for r in records if r.actual is not None]
+        if not matched:
+            return []
+
+        def _grade(s: float) -> str:
+            if s >= 93: return "A+"
+            if s >= 87: return "A"
+            if s >= 80: return "A-"
+            if s >= 74: return "B+"
+            if s >= 67: return "B"
+            if s >= 60: return "B-"
+            if s >= 54: return "C+"
+            if s >= 47: return "C"
+            if s >= 40: return "C-"
+            if s >= 34: return "D+"
+            if s >= 27: return "D"
+            if s >= 20: return "D-"
+            return "F"
+
+        rows: List[Dict] = []
+        run_errors: list = []
+        run_dir:    list = []
+        run_range:  list = []
+
+        for r in matched:
+            if r.avg is None or r.actual is None:
+                continue
+            err_pct  = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
+            in_range = (
+                r.best is not None and r.worst is not None and r.actual is not None
+                and min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
+            )
+            prev   = _prev_close(r.date, df)
+            dir_ok = None
+            if prev is not None:
+                dir_ok = (r.avg >= prev) == (r.actual >= prev)
+
+            run_errors.append(err_pct)
+            if dir_ok is not None:
+                run_dir.append(dir_ok)
+            run_range.append(in_range)
+
+            mean_ape   = sum(run_errors) / len(run_errors)
+            mape_raw   = math.exp(-0.15 * mean_ape)
+            dir_acc    = (sum(run_dir) / len(run_dir)) if run_dir else 0.5
+            range_frac = sum(run_range) / len(run_range)
+            composite  = round(min(100.0, max(0.0, (0.50 * mape_raw + 0.30 * dir_acc + 0.20 * range_frac) * 100)), 1)
+
+            pred_date  = (r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date))
+
+            rows.append({
+                "Exported At":    pred_date,
+                "Scenario":       "── Daily Score ──",
+                "Open":  "", "High": "", "Low": "",
+                "Close":          f"Pred {round(r.avg or 0, 2)}  →  Actual {round(r.actual or 0, 2)}",
+                "Profit %":       round((r.actual - r.avg) / (abs(r.avg) + 1e-8) * 100, 2) if r.actual and r.avg else 0,
+                "Current Price":  round(r.actual or 0, 2),
+                "Confidence":     "",
+                "Signal":         "✓ In range" if in_range else "✗ Outside",
+                "Score":          composite,
+                "Grade":          _grade(composite),
+                "Avg Error %":    round(mean_ape, 2),
+                "Dir Accuracy %": round(dir_acc * 100, 1),
+                "In Range %":     round(range_frac * 100, 1),
+                "Matched Preds":  len(run_errors),
+            })
+
+        return rows
