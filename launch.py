@@ -4,7 +4,7 @@ launch.py
 ~~~~~~~~~
 Entry point for the Stock Price Predictor.
 
-Checks dependencies, then delegates to src.ui.app.main().
+Checks dependencies, then delegates to ui.app.main().
 """
 
 import sys
