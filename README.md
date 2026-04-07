@@ -7,11 +7,11 @@ A multi-file neural network system that fetches stock data from **Yahoo Finance*
 - **Multi-Output Neural Network**: Predicts all price points (Open, High, Low, Close, Volume) simultaneously
 - **Advanced Scenario Analysis**: Generates Best Case, Average Case, and Worst Case forecasts
 - **Yahoo Finance Integration**: Free, no API key needed — data fetched via `yfinance`
-- **Adaptive Learning**: Continues learning from new data on each update cycle
+- **Adaptive Learning**: Experience-replay update — blends the most recent sequences with a random sample of older ones to adapt without forgetting prior patterns
 - **Technical Indicators**: RSI, MACD, SMA (20/50), Bollinger Bands, Volume Ratio, Volatility, Momentum
 - **Market Sentiment Analysis**: Bullish/bearish scoring across multiple indicator signals
 - **Model Persistence (JSON + CSV)**: Network weights, scaler params, and prediction history saved to `stock_models.json` / `stock_models_history.csv` after every train, predict, and update — model resumes from where it left off on next startup
-- **Accuracy Scoring**: Composite 0–100 score with letter grades (A+ → F) measuring price error, directional accuracy, and within-range hits
+- **Accuracy Scoring**: Composite 0–100 score with letter grades (A+ → F) measuring price error, directional accuracy, and within-range hits — scored MAPE feeds back into the confidence calculation for each new prediction
 - **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
 - **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
 - **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
@@ -46,8 +46,8 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 ## System Architecture
 
 ### 1. Neural Network Core (`stock_volume_predictor.py`)
-- `AdaptiveStockPredictor` — custom two-layer neural network (ReLU hidden, linear output) with adaptive learning rate
-- `YahooFinanceAPI` — fetches 180 days of OHLCV history via `yfinance`
+- `AdaptiveStockPredictor` — custom two-layer neural network (ReLU hidden, linear output) with a warm-up + step-decay learning rate schedule
+- `YahooFinanceAPI` — fetches 365 days of OHLCV history via `yfinance`
 - `StockTradingSystem` — orchestrates data fetching, feature engineering, training, prediction, and adaptive updates
 
 ### 2. Data & Thread Manager (`stock_store.py`)
@@ -157,20 +157,20 @@ print(result.matched_predictions)
 
 ### Data Pipeline
 ```
-Yahoo Finance (yfinance) → 180-day OHLCV → Technical Indicators
+Yahoo Finance (yfinance) → 365-day OHLCV → Technical Indicators
     → Normalization → Sliding-window sequences → Neural Network
 ```
 
 ### Neural Network Architecture
 ```
-Input Layer  (lookback_window × 9 features)
+Input Layer  (lookback_window × 12 features)
       ↓
-Hidden Layer (30 neurons, ReLU)
+Hidden Layer (30 neurons, ReLU + Monte Carlo Dropout at inference)
       ↓
 Output Layer (5 outputs: Open, High, Low, Close, Volume)
 ```
 
-**9 features per time step:**
+**12 features per time step:**
 1. Open
 2. High
 3. Low
@@ -180,9 +180,24 @@ Output Layer (5 outputs: Open, High, Low, Close, Volume)
 7. RSI (14-period)
 8. Volume Ratio (vs 20-day average)
 9. Volatility (20-day std)
+10. MACD
+11. MACD Signal
+12. Price Momentum (10-day)
+
+### Uncertainty Estimation
+Prediction uncertainty is estimated via **Monte Carlo Dropout**: during inference, hidden units are randomly zeroed out across 100 forward passes and the standard deviation of outputs is used as the uncertainty signal. This reflects genuine model uncertainty rather than injected noise.
+
+### Confidence Score
+The confidence value shown in the GUI is a weighted combination of:
+- **Scored MAPE** (weight 3×) — the model's real historical error rate from the accuracy scorer, when available. This is the primary signal once predictions have been matched to actual prices.
+- MC-Dropout uncertainty relative to current price (weight 1.5×)
+- Data recency (weight 1×)
+- Data quantity (weight 0.5×)
+- Sentiment confidence (weight 0.5×)
+- Training loss proxy (weight 1×, only when no scored MAPE exists yet)
 
 ### Scenario Generation
-Three scenarios are derived from the base prediction by applying volatility multipliers shaped by:
+Three scenarios are derived from the base prediction using the model's directly predicted High and Low values, shaped by:
 - Current RSI and MACD readings
 - Market sentiment score
 - Recent price volatility
@@ -191,14 +206,18 @@ Three scenarios are derived from the base prediction by applying volatility mult
 ### Model Persistence Flow
 ```
 _train_thread
-    → load_model_from_xlsx  (if saved weights exist → resume & short retrain)
+    → load_model_from_xlsx  (checks saved input_size matches current config;
+                             warns and retrains from scratch on shape mismatch)
     → train_model           (full epochs if new; ~20% epochs if resuming)
     → save_model_to_xlsx    (weights + scaler → stock_models.json,
                              pred_history    → stock_models_history.csv)
 
 _predict_thread / _update_thread
-    → predict / adaptive_update
+    → adaptive_update       (experience replay: recent + random older sequences,
+                             5 gradient steps per call)
     → archive_prediction    (push current pred into history)
+    → score_symbol          (update accuracy_score from pred_history)
+    → predict_next_day      (passes scored_mape into confidence calculation)
     → save_model_to_xlsx
 ```
 
@@ -236,9 +255,9 @@ Updates every 60 seconds automatically.
 |-----------|---------|-------------|
 | `lookback_window` | 10 | Historical days used as input to the network |
 | `hidden_size` | 30 | Neurons in the hidden layer |
-| `learning_rate` | 0.001 | Initial learning rate |
+| `learning_rate` | 0.001 | Initial LR; warms up over first 10 epochs then decays 5% every 20 epochs |
 | `epochs` | 200 | Training iterations (full train); ~20% for resume |
-| `input_features` | 9 | Features per time step |
+| `input_features` | 12 | Features per time step |
 | `outputs` | 5 | Predicted values (OHLCV) |
 
 ## Files in the Project
@@ -290,7 +309,7 @@ python launch.py   # checks dependencies before opening the GUI
 
 **Weights not loading on startup:**
 - `stock_models.json` is created after the first successful training run
-- If the saved `input_size` doesn't match the current `lookback_window`, the model trains from scratch and overwrites the old entry
+- If the saved `input_size` doesn't match the current feature count (e.g. after a feature set change), the model logs a clear warning and retrains from scratch — old weights are not silently discarded without notice
 
 ## Disclaimer
 

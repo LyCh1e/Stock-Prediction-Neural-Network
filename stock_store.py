@@ -691,7 +691,8 @@ class StockStore:
 
             data["status"] = "Trained"
 
-            pred = system.predict_next_day(symbol, include_scenarios=True)
+            pred = system.predict_next_day(symbol, include_scenarios=True,
+                                           scored_mape=self._scored_mape(data))
             data["prediction"] = pred
             data["status"] = "Ready"
 
@@ -716,7 +717,8 @@ class StockStore:
                 return
             self._cb("status", f"Predicting {symbol}…")
 
-            pred = data["system"].predict_next_day(symbol, include_scenarios=True)
+            pred = data["system"].predict_next_day(symbol, include_scenarios=True,
+                                                    scored_mape=self._scored_mape(data))
             self._archive_prediction(data)
 
             data["prediction"] = pred
@@ -742,7 +744,8 @@ class StockStore:
             data["system"].adaptive_update(symbol)
             self._archive_prediction(data)
 
-            pred = data["system"].predict_next_day(symbol, include_scenarios=True)
+            pred = data["system"].predict_next_day(symbol, include_scenarios=True,
+                                                    scored_mape=self._scored_mape(data))
             data["prediction"] = pred
             data["status"] = "Ready"
 
@@ -760,6 +763,13 @@ class StockStore:
     # ------------------------------------------------------------------ #
     #  Private helpers                                                   #
     # ------------------------------------------------------------------ #
+
+    def _scored_mape(self, data: StockEntry) -> Optional[float]:
+        """Return the mean absolute percentage error from the accuracy scorer, or None."""
+        result = data.get("accuracy_score")
+        if result is None or result.matched_predictions == 0:
+            return None
+        return result.mean_abs_error_pct
 
     def _archive_prediction(self, data: StockEntry) -> None:
         """Push the current prediction into pred_history before overwriting it."""
