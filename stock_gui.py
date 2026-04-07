@@ -45,6 +45,7 @@ class StockPriceGUI:
 
         self.create_widgets()
         self.process_queue()
+        self._tick_market_status()
         self.store.load_symbols()
         self._start_auto_threads()
 
@@ -90,12 +91,19 @@ class StockPriceGUI:
         ttk.Button(ctrl, text="Quick Add (SPY/AAPL/MSFT)", command=self.quick_add).grid(row=0, column=7, padx=5)
 
         pull_bar = ttk.Frame(mgr_frame)
-        pull_bar.grid(row=1, column=0, sticky="w", padx=8, pady=(0, 2))
+        pull_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
         self.pull_dot = tk.Label(pull_bar, text="●", foreground="#9e9e9e", font=("Helvetica", 11))
         self.pull_dot.pack(side="left")
         self.last_pull_var = tk.StringVar(value="Last updated: —")
         tk.Label(pull_bar, textvariable=self.last_pull_var,
                  font=("Helvetica", 9), foreground="#555").pack(side="left", padx=4)
+
+        # Market status indicator (right side of the same bar)
+        self.market_dot = tk.Label(pull_bar, text="●", foreground="#9e9e9e", font=("Helvetica", 11))
+        self.market_dot.pack(side="right", padx=(0, 4))
+        self.market_status_var = tk.StringVar(value="Market: —")
+        tk.Label(pull_bar, textvariable=self.market_status_var,
+                 font=("Helvetica", 9, "bold"), foreground="#333").pack(side="right", padx=(0, 2))
 
         tbl = ttk.LabelFrame(mgr_frame, text="Tracked Stocks", padding="6")
         tbl.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
@@ -123,6 +131,7 @@ class StockPriceGUI:
             ("Remove Selected",     self.remove_selected),
             ("Update Stock Data",   self.update_stock_data),
             ("Update Predictions",  self.update_predictions),
+            ("View Score",          self.view_score),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
 
@@ -331,14 +340,6 @@ class StockPriceGUI:
                 "worst": pred["scenarios"]["worst_case"]["close"],
             })
 
-        pred_dates: list = []
-        pred_best:  list = []
-        pred_avg:   list = []
-        pred_worst: list = []
-
-        # Split predictions into historical (overlaps actual data) and future
-        hist_pred_dates: list = []
-        hist_pred_avg:   list = []
         future_pred_dates: list = []
         future_pred_best:  list = []
         future_pred_avg:   list = []
@@ -354,21 +355,11 @@ class StockPriceGUI:
 
             for d, b, a, w in zip(pred_dates, pred_best, pred_avg, pred_worst):
                 pt_dt = d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time())
-                if pt_dt.date() < today.date():
-                    hist_pred_dates.append(d)
-                    hist_pred_avg.append(a)
-                else:
+                if pt_dt.date() >= today.date():
                     future_pred_dates.append(d)
                     future_pred_best.append(b)
                     future_pred_avg.append(a)
                     future_pred_worst.append(w)
-
-            # Plot historical predictions overlaid on actual data
-            if hist_pred_dates:
-                ax.plot(hist_pred_dates, hist_pred_avg, color="#e65100", linewidth=1.4,
-                        linestyle="--", label="Past Predictions", zorder=5)
-                ax.scatter(hist_pred_dates, hist_pred_avg, color="#e65100", s=30,
-                           zorder=6, edgecolors="white", linewidths=0.8)
 
             # Plot future predictions continuing from last actual close
             if future_pred_dates:
@@ -408,7 +399,7 @@ class StockPriceGUI:
         ax.legend(fontsize=8, loc="upper left", framealpha=0.85)
 
         # ── 5. Crosshair elements ─────────────────────────────────── #
-        all_x_dates = actual_dates + pred_dates
+        all_x_dates = actual_dates + future_pred_dates
         vline = ax.axvline(
             x=float(mdates.date2num(all_x_dates[0])) if all_x_dates else float(mdates.date2num(today)),
             color="#555", linewidth=0.8, linestyle=":", visible=False, zorder=7)
@@ -795,6 +786,33 @@ class StockPriceGUI:
         except queue.Empty:
             pass
         self.root.after(100, self.process_queue)
+
+    # ------------------------------------------------------------------ #
+    #  MARKET STATUS                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _tick_market_status(self) -> None:
+        """Update the market status label every minute using US Eastern time."""
+        from zoneinfo import ZoneInfo
+        from datetime import time as dtime
+        now_et  = datetime.now(ZoneInfo("America/New_York"))
+        weekday = now_et.weekday()   # 0 = Monday, 6 = Sunday
+        t       = now_et.time()
+
+        if weekday >= 5:
+            label, colour = "Closed (Weekend)", "#9e9e9e"
+        elif dtime(4, 0) <= t < dtime(9, 30):
+            label, colour = "Pre-Market", "#f57f17"
+        elif dtime(9, 30) <= t < dtime(16, 0):
+            label, colour = "Market Open", "#2e7d32"
+        elif dtime(16, 0) <= t < dtime(20, 0):
+            label, colour = "After-Hours", "#1565c0"
+        else:
+            label, colour = "Closed", "#9e9e9e"
+
+        self.market_status_var.set(f"Market: {label}")
+        self.market_dot.config(foreground=colour)
+        self.root.after(60_000, self._tick_market_status)
 
 
 def main() -> None:
