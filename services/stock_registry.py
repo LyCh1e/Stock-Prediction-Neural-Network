@@ -203,6 +203,7 @@ class StockRegistry:
             data["status"]     = "Ready"
 
             self._save_model(symbol)
+            self._exporter.update_stock_data({symbol: data})
 
             self._cb("refresh", symbol)
             self._cb("chart",   symbol)

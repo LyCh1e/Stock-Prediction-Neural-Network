@@ -258,9 +258,11 @@ class StockPriceApp:
                     "✓" if in_range else "✗", direction,
                 ))
             else:
+                is_weekend = r.date.weekday() >= 5
+                actual_label = "Not Available" if is_weekend else "Pending"
                 tree.insert("", "end", tags=("pending",), values=(
                     date_str, f"${r.avg:.2f}", f"${r.best:.2f}", f"${r.worst:.2f}",
-                    "Pending", "—", "—", "—",
+                    actual_label, "—", "—", "—",
                 ))
 
         vsb = ttk.Scrollbar(tbl_frame, orient="vertical",   command=tree.yview)

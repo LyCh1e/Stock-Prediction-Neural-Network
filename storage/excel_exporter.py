@@ -135,6 +135,8 @@ class ExcelExporter:
             df_out.index = df_out.index.tz_localize(None)
         df_out.index = df_out.index.date
         df_out.index.name = "Date"
+        today = datetime.now().date()
+        df_out = df_out[df_out.index < today]
         return df_out
 
     def load_pred_history(self, symbol: str) -> List[Dict]:
