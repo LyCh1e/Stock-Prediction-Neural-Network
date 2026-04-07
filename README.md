@@ -15,7 +15,7 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
 - **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
 - **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
-- **Background Auto-Updates**: Data refreshed at ~1000 calls/hour across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
+- **Background Auto-Updates**: Data refreshed at ~1000 calls/hour across all tracked symbols; predictions refreshed every 5 minutes — current price always reflects the latest fetch — the UI never freezes
 - **Excel Export**: OHLCV history → `stock_data.xlsx`, prediction scenarios + daily scores → `stock_predictions.xlsx`
 
 ## Quick Start
@@ -153,7 +153,7 @@ _predict_thread / _update_thread
 | File | Contents |
 |------|---------|
 | `stock_models.json` | Network weights and scaler params per symbol |
-| `stock_models_history.csv` | Full prediction log (Symbol, Date, Avg, Best, Worst) |
+| `stock_models_history.csv` | Prediction log (Symbol, Date, Avg, Best, Worst) — capped at 5 most recent entries per symbol |
 | `tracked_symbols.json` | Tracked symbols with lookback and epoch settings |
 
 ### Market Status Indicator
@@ -188,13 +188,12 @@ Updates every 60 seconds automatically.
 | Button | Action |
 |--------|--------|
 | Add & Train | Add a symbol and train the network (resumes from saved weights if available) |
-| Quick Add (SPY/AAPL/MSFT) | Add the three default symbols at once |
 | Predict All | Refresh predictions for every tracked stock |
 | Update All | Adaptive update for every tracked stock |
 | Remove Selected | Remove selected stock(s) from the tracker |
 | Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
-| View History | Show all archived predictions for the selected stock, newest first |
+| View Score | Show accuracy score and all archived predictions for the selected stock |
 | Refresh Charts | Redraw all chart tabs with latest data (Charts tab) |
 
 ### Scenario Generation
@@ -241,7 +240,7 @@ Three scenarios are derived from the base prediction by applying volatility mult
 | `requirements.txt` | Python package dependencies |
 | `tracked_symbols.json` | Auto-generated: saved symbols and their settings |
 | `stock_models.json` | Auto-generated: saved network weights + scaler params |
-| `stock_models_history.csv` | Auto-generated: full prediction history log |
+| `stock_models_history.csv` | Auto-generated: prediction history log (5 most recent per symbol) |
 | `stock_data.xlsx` | Auto-generated: OHLCV history |
 | `stock_predictions.xlsx` | Auto-generated: prediction scenarios + daily actual-vs-predicted rows |
 
