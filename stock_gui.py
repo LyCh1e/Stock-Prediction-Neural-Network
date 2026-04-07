@@ -131,7 +131,6 @@ class StockPriceGUI:
             ("Remove Selected",     self.remove_selected),
             ("Update Stock Data",   self.update_stock_data),
             ("Update Predictions",  self.update_predictions),
-            ("View Score",          self.view_score),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
 

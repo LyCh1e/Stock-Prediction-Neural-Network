@@ -631,6 +631,11 @@ class StockStore:
                 return False
 
             m = system.model
+            saved_input_size = entry.get("input_size", -1)
+            if saved_input_size != m.input_size:
+                self._cb("log", f"{symbol}: saved input_size={saved_input_size} != "
+                                f"current input_size={m.input_size} — retraining from scratch")
+                return False
             m.W1 = np.array(entry["W1"])
             m.b1 = np.array(entry["b1"])
             m.W2 = np.array(entry["W2"])

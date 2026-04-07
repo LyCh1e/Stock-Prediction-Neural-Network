@@ -486,7 +486,7 @@ class StockTradingSystem:
         self.api = YahooFinanceAPI(api_key)
         # Ensure minimum lookback is at least 3 days
         self.lookback_window = max(3, lookback_window)
-        self.model = AdaptiveStockPredictor(input_size=self.lookback_window * 9, hidden_size=30)
+        self.model = AdaptiveStockPredictor(input_size=self.lookback_window * 12, hidden_size=30)
         self.scaler_params = {}
         self.symbol = None
         
@@ -496,9 +496,10 @@ class StockTradingSystem:
         IMPROVED: Works with as little as lookback_window days of data.
         """
         # Select features for prediction
-        feature_cols = ['open', 'high', 'low', 'close', 'volume', 
-                       'sma_20', 'rsi', 'volume_ratio', 'volatility']
-        
+        feature_cols = ['open', 'high', 'low', 'close', 'volume',
+                       'sma_20', 'rsi', 'volume_ratio', 'volatility',
+                       'macd', 'macd_signal', 'momentum']
+
         # Ensure all features exist - now handles short data
         if 'sma_20' not in df.columns or df['sma_20'].isna().all():
             df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
@@ -621,9 +622,10 @@ class StockTradingSystem:
         sentiment = self.api.get_market_sentiment(symbol)
         
         # Prepare input data
-        feature_cols = ['open', 'high', 'low', 'close', 'volume', 
-                       'sma_20', 'rsi', 'volume_ratio', 'volatility']
-        
+        feature_cols = ['open', 'high', 'low', 'close', 'volume',
+                       'sma_20', 'rsi', 'volume_ratio', 'volatility',
+                       'macd', 'macd_signal', 'momentum']
+
         # Ensure dataframe has required columns
         if 'sma_20' not in df.columns or df['sma_20'].isna().all():
             df = self.api._calculate_technical_indicators(df, min_window=self.lookback_window)
