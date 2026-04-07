@@ -1,6 +1,4 @@
 """
-src/data/fetcher.py
-~~~~~~~~~~~~~~~~~~~
 Concrete IDataFetcher implementation using Yahoo Finance (yfinance).
 
 Responsibilities (Single Responsibility):

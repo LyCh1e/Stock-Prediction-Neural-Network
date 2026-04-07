@@ -1,6 +1,4 @@
 """
-src/ml/predictor.py
-~~~~~~~~~~~~~~~~~~~
 Responsible for generating predictions, scenarios, confidence scores,
 and technical indicator summaries from a trained NeuralNetwork.
 

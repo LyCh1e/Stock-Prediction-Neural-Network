@@ -1,6 +1,4 @@
 """
-src/storage/symbol_repository.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Responsible for JSON persistence of the tracked-symbols registry.
 
 Single Responsibility: save/load the {symbol: {lookback, epochs}} mapping.

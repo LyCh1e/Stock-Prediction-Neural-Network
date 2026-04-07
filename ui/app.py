@@ -1,6 +1,4 @@
 """
-src/ui/app.py
-~~~~~~~~~~~~~
 Main application window: composes StockManagerTab + ChartsTab, wires the
 message-queue bridge, and hosts the background auto-update threads.
 

@@ -1,6 +1,4 @@
 """
-src/scoring/scorer.py
-~~~~~~~~~~~~~~~~~~~~~
 Accuracy scoring for the Stock Price Predictor.
 
 Single Responsibility: compute composite accuracy scores from prediction

@@ -1,6 +1,4 @@
 """
-src/ui/stock_tab.py
-~~~~~~~~~~~~~~~~~~~~
 Stock Manager tab widget.
 
 Single Responsibility: render and handle the Stock Manager UI tab.

@@ -1,6 +1,4 @@
 """
-src/storage/excel_exporter.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Responsible for exporting OHLCV data and predictions to Excel files.
 
 Single Responsibility: Excel I/O only. No ML, no registry logic.

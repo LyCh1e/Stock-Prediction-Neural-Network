@@ -1,6 +1,4 @@
 """
-src/core/models.py
-~~~~~~~~~~~~~~~~~~
 Pure data classes shared across all layers.
 
 No business logic lives here — only data shape definitions.

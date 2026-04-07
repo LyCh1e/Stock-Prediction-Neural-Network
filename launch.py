@@ -1,9 +1,5 @@
-#!/usr/bin/env python3
 """
-launch.py
-~~~~~~~~~
 Entry point for the Stock Price Predictor.
-
 Checks dependencies, then delegates to ui.app.main().
 """
 

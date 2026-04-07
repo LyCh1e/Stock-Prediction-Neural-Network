@@ -1,6 +1,4 @@
 """
-src/storage/model_repository.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Responsible for JSON persistence of trained model weights.
 
 Single Responsibility: save/load weights to/from a single JSON file.

@@ -1,6 +1,4 @@
 """
-src/ml/network.py
-~~~~~~~~~~~~~~~~~
 Pure two-layer neural network implementation.
 
 Single Responsibility: forward pass, backward pass, weight updates, and
@@ -8,9 +6,7 @@ uncertainty estimation. No data fetching, no persistence, no orchestration.
 """
 
 from __future__ import annotations
-
 from typing import Tuple
-
 import numpy as np
 
 
@@ -45,7 +41,14 @@ class NeuralNetwork:
     # ------------------------------------------------------------------ #
 
     def forward(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return (z1, a1, output) — pre-activation, post-activation, predictions."""
+        """
+        Run a forward pass through the network to produce predictions.
+
+        Multiplies the input by the first layer's weights (W1), applies ReLU to
+        introduce non-linearity, then multiplies by the second layer's weights (W2)
+        to produce the final output. Returns the intermediate values z1 and a1 so
+        that backward() can reuse them without recomputing.
+        """
         z1     = np.dot(X, self.W1) + self.b1
         a1     = self._relu(z1)
         output = np.dot(a1, self.W2) + self.b2
@@ -59,7 +62,15 @@ class NeuralNetwork:
         a1: np.ndarray,
         output: np.ndarray,
     ) -> None:
-        """Gradient descent weight update."""
+        """
+        Compute gradients and update all weights and biases via gradient descent.
+
+        Uses the chain rule to propagate the MSE loss backwards from the output
+        layer through to the input layer. Gradients for each weight matrix are
+        computed as dot products between upstream error signals and activations.
+        If the last 10 losses are highly variable (std > 50% of mean), the
+        learning rate is halved for this step to stabilise training.
+        """
         m = X.shape[0]
 
         dL_doutput = 2 * (output - y) / m
@@ -88,7 +99,13 @@ class NeuralNetwork:
     # ------------------------------------------------------------------ #
 
     def train_step(self, X: np.ndarray, y: np.ndarray) -> float:
-        """Single forward + backward pass. Returns the MSE loss."""
+        """
+        Perform one complete training iteration on a batch of data.
+
+        Runs a forward pass to get predictions, computes MSE loss, appends it
+        to the loss history, then runs a backward pass to update the weights.
+        Returns the loss so the caller can track training progress.
+        """
         z1, a1, output = self.forward(X)
         loss = float(np.mean((output - y) ** 2))
         self.losses.append(loss)
@@ -96,7 +113,13 @@ class NeuralNetwork:
         return loss
 
     def incremental_update(self, X_new: np.ndarray, y_new: np.ndarray) -> None:
-        """Single backward pass on new data for adaptive updates."""
+        """
+        Update the network weights with a single new data point or small batch.
+
+        Intended for online/adaptive learning after initial training — e.g. when
+        fresh market data arrives. Runs one forward+backward pass and records the
+        mean absolute error so prediction accuracy can be tracked over time.
+        """
         z1, a1, output = self.forward(X_new)
         self.backward(X_new, y_new, z1, a1, output)
         error = float(np.mean(np.abs(output - y_new)))
@@ -107,7 +130,13 @@ class NeuralNetwork:
     # ------------------------------------------------------------------ #
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Deterministic forward pass."""
+        """
+        Produce a single deterministic prediction for the given input.
+
+        Runs a forward pass and returns only the output array, discarding the
+        intermediate values. Use this when you need a point estimate and do not
+        need uncertainty information.
+        """
         _, _, output = self.forward(X)
         return output
 
@@ -115,9 +144,12 @@ class NeuralNetwork:
         self, X: np.ndarray, num_samples: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Monte Carlo uncertainty estimation.
+        Estimate prediction uncertainty using Monte Carlo sampling.
 
-        Returns (mean_prediction, std_prediction).
+        Runs `num_samples` forward passes, each time adding a small amount of
+        Gaussian noise (mean=0, std=0.02) to the output to simulate variability.
+        Returns the mean and standard deviation across all samples — a higher
+        std indicates the network is less confident about that prediction.
         """
         preds = []
         for _ in range(num_samples):
@@ -132,8 +164,22 @@ class NeuralNetwork:
 
     @staticmethod
     def _relu(x: np.ndarray) -> np.ndarray:
+        """
+        Apply the ReLU activation function element-wise.
+
+        Clamps all negative values to zero, letting positive values pass through
+        unchanged. This introduces non-linearity so the network can learn
+        non-linear relationships in the data.
+        """
         return np.maximum(0, x)
 
     @staticmethod
     def _relu_derivative(x: np.ndarray) -> np.ndarray:
+        """
+        Compute the derivative of ReLU element-wise.
+
+        Returns 1 where the pre-activation value was positive, 0 elsewhere.
+        Used during backpropagation to gate the gradient flowing back through
+        the hidden layer — neurons that were "off" (x <= 0) receive no gradient.
+        """
         return (x > 0).astype(float)

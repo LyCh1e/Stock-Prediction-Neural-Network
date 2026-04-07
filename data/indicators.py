@@ -1,6 +1,4 @@
 """
-src/data/indicators.py
-~~~~~~~~~~~~~~~~~~~~~~
 Single-responsibility module for computing technical indicators on OHLCV data.
 
 All indicator logic is isolated here so it can be tested, swapped, or extended

@@ -1,6 +1,4 @@
 """
-src/ui/chart_tab.py
-~~~~~~~~~~~~~~~~~~~~
 Charts tab widget: one sub-tab per tracked stock with a Matplotlib chart.
 
 Single Responsibility: chart rendering, hover tooltips, and navigation

@@ -1,6 +1,4 @@
 """
-src/services/trading_service.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Orchestrates data fetching, model training, and prediction for one symbol.
 
 Single Responsibility: coordinate the data / ML layers to produce a trained

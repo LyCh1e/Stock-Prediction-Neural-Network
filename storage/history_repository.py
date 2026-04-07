@@ -1,6 +1,4 @@
 """
-src/storage/history_repository.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Responsible for CSV persistence of prediction history.
 
 Single Responsibility: save/load the pred_history list for each symbol.

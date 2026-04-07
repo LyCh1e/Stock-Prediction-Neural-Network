@@ -1,6 +1,4 @@
 """
-src/core/interfaces.py
-~~~~~~~~~~~~~~~~~~~~~~
 Abstract base classes (interfaces) for the SOLID dependency-inversion layer.
 
 All high-level modules (services, registry) depend on these abstractions.

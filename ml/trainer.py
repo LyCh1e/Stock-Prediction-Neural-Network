@@ -1,6 +1,4 @@
 """
-src/ml/trainer.py
-~~~~~~~~~~~~~~~~~
 Responsible for data preparation and the training loop.
 
 Single Responsibility: turn a raw OHLCV DataFrame into normalised

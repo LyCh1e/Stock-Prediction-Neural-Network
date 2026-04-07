@@ -1,6 +1,4 @@
 """
-src/services/stock_registry.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Central in-memory registry for all tracked stocks plus background-thread workers.
 
 Single Responsibility: manage the stock registry lifecycle (add/remove/update)
