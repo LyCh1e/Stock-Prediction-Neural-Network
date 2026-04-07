@@ -39,7 +39,7 @@ def main() -> None:
 
     print("Launching GUI...")
     try:
-        from src.ui.app import main as run_app
+        from ui.app import main as run_app
         run_app()
     except Exception as exc:
         print(f"Error launching GUI: {exc}")
