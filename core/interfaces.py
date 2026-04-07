@@ -87,14 +87,3 @@ class ISymbolRepository(ABC):
         """Return the persisted symbols dict (empty dict if none)."""
 
 
-class IScorer(ABC):
-    """Responsible for computing accuracy scores from prediction history."""
-
-    @abstractmethod
-    def score(
-        self,
-        pred_history: list,
-        raw_df: pd.DataFrame,
-        current_price: float,
-    ):
-        """Return a ScoreResult for the given prediction history."""

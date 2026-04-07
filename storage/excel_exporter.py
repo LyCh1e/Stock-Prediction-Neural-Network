@@ -8,7 +8,6 @@ Single Responsibility: Excel I/O only. No ML, no registry logic.
 
 from __future__ import annotations
 
-import math
 import os
 import threading
 from datetime import datetime
@@ -16,7 +15,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from scoring.scorer import _parse_records, _match_actuals, _prev_close
+from scoring.scorer import _parse_records, _match_actuals
 
 _LOCK = threading.Lock()
 
@@ -163,8 +162,6 @@ class ExcelExporter:
                 "Current Price":  round(pred["current_price"], 2),
                 "Confidence":     round(pred["confidence"] * 100, 1),
                 "Signal":         pred.get("recommendation", "").replace("_", " "),
-                "Score": "", "Grade": "", "Avg Error %": "",
-                "Dir Accuracy %": "", "In Range %": "", "Matched Preds": "",
             })
 
         score_rows = ExcelExporter._build_daily_score_rows(symbol, data)
@@ -186,51 +183,17 @@ class ExcelExporter:
         if not matched:
             return []
 
-        def _grade(s: float) -> str:
-            if s >= 93: return "A+"
-            if s >= 87: return "A"
-            if s >= 80: return "A-"
-            if s >= 74: return "B+"
-            if s >= 67: return "B"
-            if s >= 60: return "B-"
-            if s >= 54: return "C+"
-            if s >= 47: return "C"
-            if s >= 40: return "C-"
-            if s >= 34: return "D+"
-            if s >= 27: return "D"
-            if s >= 20: return "D-"
-            return "F"
-
         rows: List[Dict] = []
-        run_errors: list = []
-        run_dir:    list = []
-        run_range:  list = []
 
         for r in matched:
             if r.avg is None or r.actual is None:
                 continue
-            err_pct  = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
             in_range = (
                 r.best is not None and r.worst is not None and r.actual is not None
                 and min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
             )
-            prev   = _prev_close(r.date, df)
-            dir_ok = None
-            if prev is not None:
-                dir_ok = (r.avg >= prev) == (r.actual >= prev)
 
-            run_errors.append(err_pct)
-            if dir_ok is not None:
-                run_dir.append(dir_ok)
-            run_range.append(in_range)
-
-            mean_ape   = sum(run_errors) / len(run_errors)
-            mape_raw   = math.exp(-0.15 * mean_ape)
-            dir_acc    = (sum(run_dir) / len(run_dir)) if run_dir else 0.5
-            range_frac = sum(run_range) / len(run_range)
-            composite  = round(min(100.0, max(0.0, (0.50 * mape_raw + 0.30 * dir_acc + 0.20 * range_frac) * 100)), 1)
-
-            pred_date  = (r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date))
+            pred_date = (r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date))
 
             rows.append({
                 "Exported At":    pred_date,
@@ -241,12 +204,6 @@ class ExcelExporter:
                 "Current Price":  round(r.actual or 0, 2),
                 "Confidence":     "",
                 "Signal":         "✓ In range" if in_range else "✗ Outside",
-                "Score":          composite,
-                "Grade":          _grade(composite),
-                "Avg Error %":    round(mean_ape, 2),
-                "Dir Accuracy %": round(dir_acc * 100, 1),
-                "In Range %":     round(range_frac * 100, 1),
-                "Matched Preds":  len(run_errors),
             })
 
         return rows

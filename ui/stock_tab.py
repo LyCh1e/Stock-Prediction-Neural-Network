@@ -44,20 +44,18 @@ class StockManagerTab(ttk.Frame):
         on_remove:       Callable,
         on_predict_all:  Callable,
         on_update_all:   Callable,
-        on_export_data:  Callable,
         on_update_data:  Callable,
-        on_export_preds: Callable,
         on_update_preds: Callable,
+        on_view_history: Callable,
     ) -> None:
         super().__init__(parent)
         self._on_add          = on_add
         self._on_remove       = on_remove
         self._on_predict_all  = on_predict_all
         self._on_update_all   = on_update_all
-        self._on_export_data  = on_export_data
         self._on_update_data  = on_update_data
-        self._on_export_preds = on_export_preds
         self._on_update_preds = on_update_preds
+        self._on_view_history = on_view_history
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
@@ -190,6 +188,7 @@ class StockManagerTab(ttk.Frame):
             ("Remove Selected",    self._remove_selected),
             ("Update Stock Data",  self._on_update_data),
             ("Update Predictions", self._on_update_preds),
+            ("View History",       self._view_history),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
 
@@ -229,6 +228,13 @@ class StockManagerTab(ttk.Frame):
             return
         if messagebox.askyesno("Confirm", f"Remove {', '.join(syms)}?"):
             self._on_remove(syms)
+
+    def _view_history(self) -> None:
+        syms = self.selected_symbols()
+        if not syms:
+            messagebox.showwarning("Warning", "Select a stock first.")
+            return
+        self._on_view_history(syms[0])
 
     # ------------------------------------------------------------------ #
     #  Helpers                                                            #

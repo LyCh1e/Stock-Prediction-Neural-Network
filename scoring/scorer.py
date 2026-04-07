@@ -28,7 +28,6 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
-from core.interfaces import IScorer
 from core.models import PredictionRecord, ScoreResult
 
 _W_MAPE    = 0.50
@@ -36,23 +35,6 @@ _W_DIR     = 0.30
 _W_RANGE   = 0.20
 _MAPE_DECAY = 0.15   # tune to taste
 
-
-class StockScorer(IScorer):
-    """Computes accuracy scores from archived prediction history."""
-
-    def score(
-        self,
-        pred_history: list,
-        raw_df: pd.DataFrame,
-        current_price: float,
-    ) -> ScoreResult:
-        return score_symbol(pred_history, raw_df, current_price)
-
-    def score_all(self, store_stocks: dict) -> dict:
-        return score_all(store_stocks)
-
-
-# ── Module-level functions (kept for backward compatibility) ──────────── #
 
 def score_symbol(
     pred_history: list,
@@ -123,20 +105,6 @@ def score_symbol(
         details=details,
         summary=summary,
     )
-
-
-def score_all(store_stocks: dict) -> dict:
-    results = {}
-    for symbol, data in store_stocks.items():
-        ph  = data.get("pred_history", [])
-        df  = data.get("raw_df")
-        cp  = (data.get("prediction") or {}).get("current_price", 0.0)
-        results[symbol] = (
-            score_symbol(ph, df, cp)
-            if df is not None
-            else _insufficient_data_result("No price data available yet.")
-        )
-    return results
 
 
 # ── Private helpers ───────────────────────────────────────────────────── #

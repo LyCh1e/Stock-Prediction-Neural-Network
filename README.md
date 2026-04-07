@@ -1,6 +1,6 @@
 # Stock Price Prediction Neural Network
 
-A multi-file neural network system that fetches stock data from **Yahoo Finance** (no API key required) and predicts OHLCV (Open, High, Low, Close, Volume) prices with scenario analysis, accuracy scoring, and full model persistence. Comes with a complete Tkinter GUI for managing multiple stocks simultaneously.
+A modular neural network system that fetches stock data from **Yahoo Finance** (no API key required) and predicts OHLCV (Open, High, Low, Close, Volume) prices with scenario analysis, accuracy scoring, and full model persistence. Comes with a complete Tkinter GUI for managing multiple stocks simultaneously.
 
 ## Features
 
@@ -24,11 +24,8 @@ A multi-file neural network system that fetches stock data from **Yahoo Finance*
 # Install dependencies
 pip install -r requirements.txt
 
-# Launch (recommended — checks dependencies first)
+# Launch
 python launch.py
-
-# Or launch the GUI directly
-python stock_gui.py
 ```
 
 No API key setup required. Add a symbol and training begins immediately.
@@ -45,131 +42,58 @@ Required packages: `numpy`, `pandas`, `matplotlib`, `yfinance`, `openpyxl`, `req
 
 ## System Architecture
 
-### 1. Neural Network Core (`stock_volume_predictor.py`)
-- `AdaptiveStockPredictor` — custom two-layer neural network (ReLU hidden, linear output) with a warm-up + step-decay learning rate schedule
-- `YahooFinanceAPI` — fetches 365 days of OHLCV history via `yfinance`
-- `StockTradingSystem` — orchestrates data fetching, feature engineering, training, prediction, and adaptive updates
+The project follows SOLID principles with a clean dependency-inversion layer. All high-level modules depend on abstract interfaces (`core/interfaces.py`), and concrete implementations are wired together in `ui/app.py`.
 
-### 2. Data & Thread Manager (`stock_store.py`)
-- `StockStore` — central registry for all tracked symbols
-- Runs training, prediction, and update jobs in background threads
-- **JSON persistence**: `save_model_to_xlsx` / `load_model_from_xlsx` save and restore network weights and scaler params to `stock_models.json`; prediction history saved to `stock_models_history.csv`
-- **Shape-mismatch guard**: if saved `input_size` doesn't match the current feature count, the old weights are discarded and the model retrains from scratch automatically
-- Appends OHLCV rows to `stock_data.xlsx` and prediction rows to `stock_predictions.xlsx`
-
-### 3. Accuracy Scorer (`stock_scorer.py`)
-- Matches past predictions to actual closing prices
-- Computes a composite score (0–100) from four components:
-
-| Component | Weight | What it measures |
-|-----------|--------|-----------------|
-| Close MAPE accuracy | 40% | How close the predicted close was |
-| Directional accuracy | 25% | Did the model get up/down right? |
-| High/Low accuracy | 20% | How close the predicted high & low were |
-| Within-range accuracy | 15% | Did the actual close land inside the best/worst band? |
-
-- `pred_history` entries store full OHLCV predictions (`pred_open`, `pred_high`, `pred_low`, `pred_volume`) to enable the High/Low component
-- Letter grades: A+ (≥93) → F (<20)
-- Scores update automatically after every prediction cycle
-
-### 4. GUI (`stock_gui.py`)
-- `StockPriceGUI` — two-tab Tkinter interface:
-  - **Stock Manager tab**: tracked symbols table (symbol, price, sentiment, confidence, signal, status), market status indicator, action buttons, activity log
-  - **Charts tab**: one sub-tab per symbol with actual price history, future forecast band (best/worst/avg), and a zoom/pan/save toolbar
-
-### 5. Launcher (`launch.py`)
-- Checks all dependencies before launching
-- Prints startup summary and feature list
-
-### 6. Auto-Updater (`stock_auto_updater.py`)
-- `StockAutoUpdater` — background service that refreshes stock data on a configurable interval (default 60 min) and persists results to a JSON cache
-
-## Usage
-
-### GUI Workflow
+### Package Layout
 
 ```
-1. python launch.py   (or python stock_gui.py)
-2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
-3. Watch training progress in the Log
-4. Switch to the Charts tab to see the price history and forecast
-5. Click "Predict All" to refresh forecasts
-6. Click "Update All" for adaptive incremental learning
-7. Click "Update Stock Data" or "Update Predictions" to write xlsx files
+core/
+  interfaces.py     — Abstract base classes (IDataFetcher, IModelRepository, IHistoryRepository, ISymbolRepository)
+  models.py         — Shared data models (ScoreResult, PredictionRecord)
+
+data/
+  fetcher.py        — YahooFinanceFetcher (implements IDataFetcher)
+  indicators.py     — Technical indicator calculations
+
+ml/
+  network.py        — NeuralNetwork (forward/backward, Monte Carlo uncertainty)
+  trainer.py        — ModelTrainer (epoch loop, warm-up + step-decay LR schedule)
+  predictor.py      — StockPredictor (scenario generation)
+
+scoring/
+  scorer.py         — score_symbol() — composite 0–100 accuracy score function
+
+services/
+  trading_service.py — StockTradingService (data + ML orchestration)
+  stock_registry.py  — StockRegistry (in-memory store + background thread workers)
+
+storage/
+  model_repository.py   — JsonModelRepository (network weights → stock_models.json)
+  history_repository.py — CsvHistoryRepository (prediction log → stock_models_history.csv)
+  symbol_repository.py  — JsonSymbolRepository (tracked symbols → tracked_symbols.json)
+  excel_exporter.py     — ExcelExporter (OHLCV + prediction xlsx files)
+
+ui/
+  app.py        — StockPriceApp (root window, tab composition, message-queue bridge)
+  stock_tab.py  — StockManagerTab (symbol table, buttons, activity log)
+  chart_tab.py  — ChartsTab (per-symbol interactive price + forecast charts)
+
+launch.py       — Dependency checker and entry point
 ```
 
-### GUI Button Reference
+### Neural Network (`ml/network.py`)
 
-| Button | Action |
-|--------|--------|
-| Add & Train | Add a symbol and train the network (resumes from saved weights if available) |
-| Quick Add (SPY/AAPL/MSFT) | Add the three default symbols at once |
-| Predict All | Refresh predictions for every tracked stock |
-| Update All | Adaptive update for every tracked stock |
-| Remove Selected | Remove selected stock(s) from the tracker |
-| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
-| Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
-| Refresh Charts | Redraw all chart tabs with latest data |
+`NeuralNetwork` — custom two-layer network (ReLU hidden, linear output):
 
-### Programmatic Usage
-
-```python
-from stock_volume_predictor import StockTradingSystem
-
-# No API key needed
-system = StockTradingSystem(lookback_window=10)
-
-# Train on 180 days of Yahoo Finance data
-system.train_model("AAPL", epochs=200)
-
-# Predict next trading day with scenario analysis
-prediction = system.predict_next_day("AAPL", include_scenarios=True)
-
-print(f"Current Price:  ${prediction['current_price']:.2f}")
-print(f"Sentiment:      {prediction['sentiment_analysis']['sentiment']}")
-print(f"Confidence:     {prediction['confidence']*100:.1f}%")
-print(f"Signal:         {prediction['recommendation']}")
-
-scenarios = prediction["scenarios"]
-print(f"Best close:     ${scenarios['best_case']['close']:.2f}")
-print(f"Average close:  ${scenarios['average_case']['close']:.2f}")
-print(f"Worst close:    ${scenarios['worst_case']['close']:.2f}")
-
-# Adaptive incremental update with latest data
-system.adaptive_update("AAPL")
-```
-
-### Accuracy Scoring
-
-```python
-from stock_scorer import score_symbol
-
-# pred_history: list of {date, avg, best, worst} dicts
-# raw_df:       OHLCV DataFrame from StockTradingSystem
-result = score_symbol(pred_history, raw_df, current_price)
-
-print(result.score)               # e.g. 73.4
-print(result.letter_grade)        # e.g. "B"
-print(result.summary)             # human-readable paragraph
-print(result.matched_predictions)
-```
-
-## How It Works
-
-### Data Pipeline
-```
-Yahoo Finance (yfinance) → 365-day OHLCV → Technical Indicators
-    → Normalization → Sliding-window sequences → Neural Network
-```
-
-### Neural Network Architecture
 ```
 Input Layer  (lookback_window × 12 features)
       ↓
-Hidden Layer (30 neurons, ReLU + Monte Carlo Dropout at inference)
+Hidden Layer (30 neurons, ReLU + Monte Carlo noise at inference)
       ↓
 Output Layer (5 outputs: Open, High, Low, Close, Volume)
 ```
+
+Training uses He initialisation, MSE loss, and an adaptive learning rate that halves when gradient variance is high.
 
 **12 features per time step:**
 1. Open
@@ -185,25 +109,36 @@ Output Layer (5 outputs: Open, High, Low, Close, Volume)
 11. MACD Signal
 12. Price Momentum (10-day)
 
-### Scenario Generation
-Three scenarios are derived from the base prediction by applying volatility multipliers shaped by:
-- Current RSI and MACD readings
-- Market sentiment score
-- Recent price volatility
-- Model confidence
+### Accuracy Scoring (`scoring/scorer.py`)
+
+Composite score (0–100) from three components:
+
+| Component | Weight | What it measures |
+|-----------|--------|-----------------|
+| MAPE accuracy | 50% | How close the predicted close was |
+| Directional accuracy | 30% | Did the model get up/down right? |
+| Within-range accuracy | 20% | Did the actual close land inside the best/worst band? |
+
+Letter grades: A+ (≥93) → F (<20). Scores update automatically after every prediction cycle.
+
+### Service & Registry (`services/`)
+
+- `StockTradingService` — orchestrates data fetching, feature engineering, training, prediction, and adaptive updates
+- `StockRegistry` — manages all tracked stocks, runs training / prediction / update jobs in background threads, delegates to injected repositories
 
 ### Model Persistence Flow
+
 ```
 _train_thread
-    → load_model_from_xlsx  (if saved weights exist → resume & short retrain)
-    → train_model           (full epochs if new; ~20% epochs if resuming)
-    → save_model_to_xlsx    (weights + scaler → stock_models.json,
-                             pred_history    → stock_models_history.csv)
+    → JsonModelRepository.restore_weights  (if saved weights exist → resume & short retrain)
+    → ModelTrainer.train                   (full epochs if new; ~20% epochs if resuming)
+    → JsonModelRepository.save            (weights + scaler → stock_models.json)
+    → CsvHistoryRepository.save           (pred_history → stock_models_history.csv)
 
 _predict_thread / _update_thread
     → predict / adaptive_update
     → archive_prediction    (push current pred into history)
-    → save_model_to_xlsx
+    → save model + history
 ```
 
 ### Excel File Layout
@@ -211,7 +146,7 @@ _predict_thread / _update_thread
 | File | Contents |
 |------|---------|
 | `stock_data.xlsx` | One sheet per symbol — append-only OHLCV history |
-| `stock_predictions.xlsx` | One sheet per symbol — scenario rows + daily score rows |
+| `stock_predictions.xlsx` | One sheet per symbol — scenario rows (Best/Average/Worst) + daily score rows (predicted vs actual close, in-range signal) |
 
 ### Persistence File Layout
 
@@ -234,33 +169,81 @@ The status bar shows the current US market session based on Eastern time:
 
 Updates every 60 seconds automatically.
 
+## Usage
+
+### GUI Workflow
+
+```
+1. python launch.py
+2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
+3. Watch training progress in the Log
+4. Switch to the Charts tab to see the price history and forecast
+5. Click "Predict All" to refresh forecasts
+6. Click "Update All" for adaptive incremental learning
+7. Click "Update Stock Data" or "Update Predictions" to write xlsx files
+```
+
+### GUI Button Reference
+
+| Button | Action |
+|--------|--------|
+| Add & Train | Add a symbol and train the network (resumes from saved weights if available) |
+| Quick Add (SPY/AAPL/MSFT) | Add the three default symbols at once |
+| Predict All | Refresh predictions for every tracked stock |
+| Update All | Adaptive update for every tracked stock |
+| Remove Selected | Remove selected stock(s) from the tracker |
+| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
+| Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
+| View History | Show all archived predictions for the selected stock, newest first |
+| Refresh Charts | Redraw all chart tabs with latest data (Charts tab) |
+
+### Scenario Generation
+
+Three scenarios are derived from the base prediction by applying volatility multipliers shaped by:
+- Current RSI and MACD readings
+- Market sentiment score
+- Recent price volatility
+- Model confidence
+
 ## Key Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `lookback_window` | 10 | Historical days used as input to the network |
 | `hidden_size` | 30 | Neurons in the hidden layer |
-| `learning_rate` | 0.001 | Initial LR; warms up over first 10 epochs then decays 5% every 20 epochs |
+| `learning_rate` | 0.001 | Initial LR; halved when gradient variance is high |
 | `epochs` | 200 | Training iterations (full train); ~20% for resume |
 | `input_features` | 12 | Features per time step |
 | `outputs` | 5 | Predicted values (OHLCV) |
 
 ## Files in the Project
 
-| File | Purpose |
-|------|---------|
-| `stock_volume_predictor.py` | Neural network, Yahoo Finance API, trading system |
-| `stock_store.py` | Data manager, background threads, model persistence |
-| `stock_scorer.py` | Prediction accuracy scoring and letter grades |
-| `stock_gui.py` | Tkinter GUI — stock manager and interactive charts |
-| `stock_auto_updater.py` | Background auto-refresh service with JSON cache |
-| `launch.py` | Dependency checker and launcher |
+| File / Directory | Purpose |
+|-----------------|---------|
+| `launch.py` | Dependency checker and entry point |
+| `core/interfaces.py` | Abstract base classes: `IDataFetcher`, `IModelRepository`, `IHistoryRepository`, `ISymbolRepository` |
+| `core/models.py` | Shared data models (ScoreResult, PredictionRecord) |
+| `data/fetcher.py` | Yahoo Finance data fetcher |
+| `data/indicators.py` | Technical indicator calculations |
+| `ml/network.py` | Two-layer neural network |
+| `ml/trainer.py` | Training loop with warm-up + step-decay LR |
+| `ml/predictor.py` | Prediction and scenario generation |
+| `scoring/scorer.py` | `score_symbol()` — composite accuracy scoring |
+| `services/trading_service.py` | Data + ML orchestration |
+| `services/stock_registry.py` | In-memory stock registry + background workers |
+| `storage/model_repository.py` | JSON model weight persistence |
+| `storage/history_repository.py` | CSV prediction history persistence |
+| `storage/symbol_repository.py` | JSON tracked-symbol persistence |
+| `storage/excel_exporter.py` | OHLCV + prediction Excel export |
+| `ui/app.py` | Root window, tab wiring, message-queue bridge |
+| `ui/stock_tab.py` | Stock Manager tab |
+| `ui/chart_tab.py` | Charts tab |
 | `requirements.txt` | Python package dependencies |
 | `tracked_symbols.json` | Auto-generated: saved symbols and their settings |
 | `stock_models.json` | Auto-generated: saved network weights + scaler params |
 | `stock_models_history.csv` | Auto-generated: full prediction history log |
 | `stock_data.xlsx` | Auto-generated: OHLCV history |
-| `stock_predictions.xlsx` | Auto-generated: prediction scenarios + scores |
+| `stock_predictions.xlsx` | Auto-generated: prediction scenarios + daily actual-vs-predicted rows |
 
 ## Technical Indicators
 
@@ -294,7 +277,7 @@ python launch.py   # checks dependencies before opening the GUI
 
 **Weights not loading on startup:**
 - `stock_models.json` is created after the first successful training run
-- If the saved `input_size` doesn't match the current feature count (e.g. after a feature set change), the model logs a warning and retrains from scratch — old weights are not silently discarded without notice
+- If the saved `input_size` doesn't match the current feature count (e.g. after a feature set change), the model logs a warning and retrains from scratch
 
 **"Update Stock Data" fails:**
 - If `stock_data.xlsx` is corrupt or empty, it will be automatically recreated from the current in-memory data

@@ -20,7 +20,6 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox, ttk
 
-from core.models import ScoreResult
 from services.stock_registry import StockRegistry
 from ui.chart_tab import ChartsTab
 from ui.stock_tab import StockManagerTab
@@ -64,10 +63,9 @@ class StockPriceApp:
             on_remove       = self._remove_stocks,
             on_predict_all  = self._predict_all,
             on_update_all   = self._update_all,
-            on_export_data  = self._export_data,
             on_update_data  = self._update_data,
-            on_export_preds = self._export_preds,
             on_update_preds = self._update_preds,
+            on_view_history = self._view_history,
         )
         nb.add(self._stock_tab, text="  Stock Manager  ")
 
@@ -104,16 +102,6 @@ class StockPriceApp:
         for sym in self.registry.symbols():
             self.registry.update(sym)
 
-    def _export_data(self) -> None:
-        if not any(d.get("raw_df") is not None for d in self.registry.stocks.values()):
-            messagebox.showinfo("Info", "No stock data yet. Train a stock first.")
-            return
-        try:
-            path = self.registry.export_stock_data()
-            messagebox.showinfo("Exported", f"Saved as:\n{path}")
-        except PermissionError:
-            messagebox.showerror("Error", "File is open. Close it and retry.")
-
     def _update_data(self) -> None:
         if not any(d.get("raw_df") is not None for d in self.registry.stocks.values()):
             messagebox.showinfo("Info", "No stock data yet. Train a stock first.")
@@ -123,16 +111,6 @@ class StockPriceApp:
             messagebox.showinfo("Updated", f"Stock data updated in:\n{path}")
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
-
-    def _export_preds(self) -> None:
-        if not any(d.get("prediction") is not None for d in self.registry.stocks.values()):
-            messagebox.showinfo("Info", "No predictions yet. Train and predict first.")
-            return
-        try:
-            path = self.registry.export_predictions()
-            messagebox.showinfo("Exported", f"Saved as:\n{path}")
-        except PermissionError:
-            messagebox.showerror("Error", "File is open. Close it and retry.")
 
     def _update_preds(self) -> None:
         if not any(d.get("prediction") is not None for d in self.registry.stocks.values()):
@@ -145,68 +123,105 @@ class StockPriceApp:
             messagebox.showerror("Error", str(exc))
 
     # ------------------------------------------------------------------ #
-    #  Score viewer                                                       #
+    #  Prediction history viewer                                          #
     # ------------------------------------------------------------------ #
 
-    def view_score(self, symbol: str) -> None:
-        data   = self.registry.get(symbol)
-        if data is None:
-            messagebox.showinfo("Info", f"{symbol} is not tracked.")
-            return
-        result: ScoreResult | None = data.get("accuracy_score")
-        if result is None:
-            messagebox.showinfo("No Score", f"{symbol} has not been scored yet.")
-            return
-        self._open_score_window(symbol, result)
+    def _view_history(self, symbol: str) -> None:
+        from scoring.scorer import _parse_records, _prev_close
+        import pandas as pd
 
-    def _open_score_window(self, symbol: str, result: ScoreResult) -> None:
+        data = self.registry.get(symbol)
+        if data is None:
+            return
+        pred_history = data.get("pred_history", [])
+        if not pred_history:
+            from tkinter import messagebox
+            messagebox.showinfo("No History", f"{symbol} has no archived predictions yet.")
+            return
+
+        raw_df  = data.get("raw_df")
+        records = _parse_records(pred_history)
+
+        # Build a date → close lookup from raw_df for direct same-day lookup
+        close_by_date: dict = {}
+        if raw_df is not None and not raw_df.empty:
+            idx = pd.DatetimeIndex(raw_df.index)
+            if hasattr(idx, "tz") and idx.tz is not None:
+                idx = idx.tz_localize(None)
+            close_by_date = dict(zip(idx.normalize(), raw_df["close"].values))
+
+        for r in records:
+            ts = pd.Timestamp(r.date).normalize()
+            if ts in close_by_date:
+                r.actual = float(close_by_date[ts])
+
+        # Most recent first
+        records = list(reversed(records))
+
         win = tk.Toplevel(self.root)
-        win.title(f"{symbol} — Accuracy Score")
-        win.geometry("780x540")
+        win.title(f"{symbol} — Prediction History ({len(records)} entries)")
+        win.geometry("920x500")
         win.resizable(True, True)
 
-        top = ttk.Frame(win, padding="12")
-        top.pack(fill="x")
-        colour = "#2e7d32" if result.score >= 80 else "#f57f17" if result.score >= 50 else "#c62828"
-        ttk.Label(top, text=f"{result.score:.1f} / 100", font=("Helvetica", 36, "bold"),
-                  foreground=colour).pack(side="left", padx=12)
-        ttk.Label(top, text=f"Grade: {result.letter_grade}", font=("Helvetica", 28),
-                  foreground=colour).pack(side="left", padx=4)
+        frm = ttk.Frame(win, padding="8")
+        frm.pack(fill="both", expand=True)
+        frm.rowconfigure(0, weight=1)
+        frm.columnconfigure(0, weight=1)
 
-        mid = ttk.LabelFrame(win, text="Score Components", padding="8")
-        mid.pack(fill="x", padx=12, pady=4)
-        for label, comp_score, detail in [
-            ("Price Closeness (50%)",    result.mape_score,        f"avg error {result.mean_abs_error_pct:.2f}%"),
-            ("Direction Accuracy (30%)", result.directional_score, f"{result.directional_accuracy * 100:.1f}% correct"),
-            ("Band Accuracy (20%)",      result.range_score,       f"{result.within_range_pct * 100:.1f}% inside range"),
-        ]:
-            row = ttk.Frame(mid); row.pack(fill="x", pady=2)
-            ttk.Label(row, text=label, width=28, anchor="w").pack(side="left")
-            ttk.Label(row, text=f"{comp_score:.1f}/100", width=10, anchor="e").pack(side="left")
-            ttk.Label(row, text=detail, foreground="#555").pack(side="left", padx=8)
+        cols = ("Prediction Date", "Predicted", "Best Case", "Worst Case",
+                "Actual", "Error %", "In Range", "Direction")
+        col_widths = (150, 90, 90, 90, 90, 80, 70, 75)
 
-        sf = ttk.LabelFrame(win, text="Summary", padding="6")
-        sf.pack(fill="x", padx=12, pady=4)
-        ttk.Label(sf, text=result.summary, justify="left", font=("Courier", 9)).pack(anchor="w")
+        tree = ttk.Treeview(frm, columns=cols, show="headings", height=18)
+        for col, w in zip(cols, col_widths):
+            tree.heading(col, text=col)
+            tree.column(col, width=w, anchor="center")
+        tree.tag_configure("matched",   background="#e8f5e9")
+        tree.tag_configure("pending",   background="#fff9c4")
+        tree.tag_configure("bad_range", background="#ffebee")
 
-        if result.details:
-            df_ = ttk.LabelFrame(win, text="Per-Prediction Breakdown", padding="6")
-            df_.pack(fill="both", expand=True, padx=12, pady=4)
-            df_.rowconfigure(0, weight=1); df_.columnconfigure(0, weight=1)
-            d_cols = list(result.details[0].keys())
-            dtree  = ttk.Treeview(df_, columns=d_cols, show="headings", height=8)
-            for col, cw in zip(d_cols, [130, 110, 80, 80, 100, 80, 65, 65]):
-                dtree.heading(col, text=col); dtree.column(col, width=cw, anchor="center")
-            for row in result.details:
-                tag = "good" if row["In Range"] == "✓" else "bad"
-                dtree.insert("", "end", values=[row[c] for c in d_cols], tags=(tag,))
-            dtree.tag_configure("good", background="#e8f5e9")
-            dtree.tag_configure("bad",  background="#ffebee")
-            vsb = ttk.Scrollbar(df_, orient="vertical", command=dtree.yview)
-            dtree.configure(yscrollcommand=vsb.set)
-            dtree.grid(row=0, column=0, sticky="nsew"); vsb.grid(row=0, column=1, sticky="ns")
-        else:
-            ttk.Label(win, text="No matched predictions to display.", foreground="gray").pack(pady=8)
+        for r in records:
+            date_str = r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date)
+            if r.actual is not None:
+                err_pct   = abs(r.avg - r.actual) / (abs(r.actual) + 1e-8) * 100
+                in_range  = min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
+                prev      = _prev_close(r.date, raw_df) if raw_df is not None else None
+                direction = "N/A"
+                if prev is not None:
+                    direction = "✓" if (r.avg >= prev) == (r.actual >= prev) else "✗"
+                tag = "matched" if in_range else "bad_range"
+                tree.insert("", "end", tags=(tag,), values=(
+                    date_str,
+                    f"${r.avg:.2f}",
+                    f"${r.best:.2f}",
+                    f"${r.worst:.2f}",
+                    f"${r.actual:.2f}",
+                    f"{err_pct:.2f}%",
+                    "✓" if in_range else "✗",
+                    direction,
+                ))
+            else:
+                tree.insert("", "end", tags=("pending",), values=(
+                    date_str,
+                    f"${r.avg:.2f}",
+                    f"${r.best:.2f}",
+                    f"${r.worst:.2f}",
+                    "Pending", "—", "—", "—",
+                ))
+
+        vsb = ttk.Scrollbar(frm, orient="vertical",   command=tree.yview)
+        hsb = ttk.Scrollbar(frm, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        legend = ttk.Frame(win, padding="4 2")
+        legend.pack(fill="x", padx=8)
+        for colour, label in [("#e8f5e9", "Actual inside range"), ("#ffebee", "Actual outside range"), ("#fff9c4", "Pending (future)")]:
+            dot = tk.Label(legend, text="■", foreground=colour, background=colour, font=("Helvetica", 12))
+            dot.pack(side="left")
+            tk.Label(legend, text=label, font=("Helvetica", 9), foreground="#555").pack(side="left", padx=(0, 12))
 
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=6)
 

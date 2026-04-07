@@ -18,9 +18,8 @@ from datetime import datetime
 from typing import Callable, Dict, Optional
 
 from core.interfaces import IHistoryRepository, IModelRepository, ISymbolRepository
-from core.models import ScoreResult
 from ml.network import NeuralNetwork
-from scoring.scorer import score_symbol, score_all
+from scoring.scorer import score_symbol
 from services.trading_service import StockTradingService
 from storage.excel_exporter import ExcelExporter
 
@@ -130,45 +129,11 @@ class StockRegistry:
             self._cb("log", f"Queued training for {symbol} (restored from save)")
 
     # ------------------------------------------------------------------ #
-    #  Accuracy scoring                                                   #
-    # ------------------------------------------------------------------ #
-
-    def score_symbol_entry(self, symbol: str) -> ScoreResult:
-        symbol = symbol.upper()
-        data   = self._stocks.get(symbol)
-        if data is None:
-            return self._no_score(f"{symbol} is not tracked.")
-        ph = data.get("pred_history", [])
-        df = data.get("raw_df")
-        cp = (data.get("prediction") or {}).get("current_price", 0.0)
-        if df is None:
-            return self._no_score(f"{symbol} has no data.")
-        result = score_symbol(ph, df, cp)
-        data["accuracy_score"] = result
-        self._cb("log",     f"{symbol} accuracy score: {result.score}/100 [{result.letter_grade}]")
-        self._cb("refresh", symbol)
-        return result
-
-    def score_all_entries(self) -> dict:
-        results = score_all(self._stocks)
-        for symbol, result in results.items():
-            self._stocks[symbol]["accuracy_score"] = result
-            self._cb("log",     f"{symbol} accuracy score: {result.score}/100 [{result.letter_grade}]")
-            self._cb("refresh", symbol)
-        return results
-
-    # ------------------------------------------------------------------ #
     #  Excel export delegates                                             #
     # ------------------------------------------------------------------ #
 
-    def export_stock_data(self) -> str:
-        return self._exporter.export_stock_data(self._stocks)
-
     def update_stock_data(self) -> str:
         return self._exporter.update_stock_data(self._stocks)
-
-    def export_predictions(self) -> str:
-        return self._exporter.export_predictions(self._stocks)
 
     def update_predictions(self) -> str:
         return self._exporter.update_predictions(self._stocks)
@@ -342,7 +307,3 @@ class StockRegistry:
             if df is not None:
                 data["accuracy_score"] = score_symbol(ph, df, cp)
 
-    @staticmethod
-    def _no_score(reason: str) -> ScoreResult:
-        from scoring.scorer import _insufficient_data_result
-        return _insufficient_data_result(reason)
