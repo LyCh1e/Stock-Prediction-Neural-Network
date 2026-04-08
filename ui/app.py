@@ -39,8 +39,9 @@ class StockPriceApp:
         self.root.title("Stock Price Predictor — Yahoo Finance")
         self.root.geometry("1100x750")
 
-        self._queue:   queue.Queue = queue.Queue()
-        self._running: bool        = True
+        self._queue:        queue.Queue          = queue.Queue()
+        self._running:      bool                 = True
+        self._score_window: tk.Toplevel | None   = None
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -199,7 +200,14 @@ class StockPriceApp:
             grade = "N/A"
 
         # ── Window ───────────────────────────────────────────────────── #
+        if self._score_window is not None and self._score_window.winfo_exists():
+            self._score_window.lift()
+            self._score_window.focus_force()
+            return
+
         win = tk.Toplevel(self.root)
+        self._score_window = win
+        win.protocol("WM_DELETE_WINDOW", lambda: (win.destroy(), setattr(self, "_score_window", None)))
         win.title(f"{symbol} — Prediction Score")
         win.geometry("860x560")
         win.resizable(True, True)

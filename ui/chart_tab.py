@@ -46,6 +46,7 @@ class ChartsTab(ttk.Frame):
         self._canvas:  Dict[str, FigureCanvasTkAgg]     = {}
         self._toolbar: Dict[str, NavigationToolbar2Tk]  = {}
         self._cids:    Dict[str, int]                   = {}
+        self._view:    Dict[str, tuple]                 = {}   # saved (xlim, ylim)
         self._store_ref = None   # set by the app after construction
 
     def set_store(self, store) -> None:
@@ -109,10 +110,14 @@ class ChartsTab(ttk.Frame):
             except Exception:
                 pass
 
-        # Close old figure and destroy old canvas + toolbar
+        # Save current view before destroying old canvas
         if symbol in self._canvas:
             try:
-                plt.close(self._canvas[symbol].figure)
+                old_fig = self._canvas[symbol].figure
+                old_ax  = old_fig.axes[0] if old_fig.axes else None
+                if old_ax is not None:
+                    self._view[symbol] = (old_ax.get_xlim(), old_ax.get_ylim())
+                plt.close(old_fig)
                 self._canvas[symbol].get_tk_widget().destroy()
             except Exception:
                 pass
@@ -204,6 +209,22 @@ class ChartsTab(ttk.Frame):
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=8)
         ax.legend(fontsize=8, loc="upper left", framealpha=0.85)
 
+        # ── 4b. Y-axis limits: restore saved view or default to 6 months ─ #
+        if symbol in self._view:
+            ax.set_xlim(*self._view[symbol][0])
+            ax.set_ylim(*self._view[symbol][1])
+        else:
+            cutoff = today - timedelta(days=182)
+            recent_closes = [
+                c for d, c in zip(actual_dates, actual_closes)
+                if (d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time())) >= cutoff
+            ]
+            y_vals = list(recent_closes) + future_avg + future_best + future_worst
+            if y_vals:
+                y_min, y_max = min(y_vals), max(y_vals)
+                pad = (y_max - y_min) * 0.05 or y_min * 0.01
+                ax.set_ylim(y_min - pad, y_max + pad)
+
         # ── 5. Crosshair elements ─────────────────────────────────── #
         all_x = actual_dates + future_dates
         start_x = float(mdates.date2num(all_x[0])) if all_x else float(mdates.date2num(today))
@@ -222,14 +243,38 @@ class ChartsTab(ttk.Frame):
         fig.tight_layout(pad=1.8)
 
         # ── 6. Embed canvas ───────────────────────────────────────── #
+        # Pack bottom frames first so canvas expand=True doesn't crowd them out
+        tb_frame = tk.Frame(frame, bg="#f0f0f0")
+        tb_frame.pack(fill="x", side="bottom")
+
+        btn_frame = tk.Frame(frame, bg="#f0f0f0")
+        btn_frame.pack(fill="x", side="bottom")
+
         canvas = FigureCanvasTkAgg(fig, master=frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        tb_frame = tk.Frame(frame, bg="#f0f0f0")
-        tb_frame.pack(fill="x", side="bottom")
         toolbar = NavigationToolbar2Tk(canvas, tb_frame)
         toolbar.update()
+
+        def _zoom(factor: float) -> None:
+            xlo, xhi = ax.get_xlim()
+            ylo, yhi = ax.get_ylim()
+            xmid = (xlo + xhi) / 2
+            ymid = (ylo + yhi) / 2
+            new_xlim = (xmid - (xmid - xlo) * factor, xmid + (xhi - xmid) * factor)
+            new_ylim = (ymid - (ymid - ylo) * factor, ymid + (yhi - ymid) * factor)
+            ax.set_xlim(*new_xlim)
+            ax.set_ylim(*new_ylim)
+            self._view[symbol] = (new_xlim, new_ylim)
+            canvas.draw_idle()
+
+        tk.Button(btn_frame, text="  +  ", command=lambda: _zoom(0.8),
+                  relief="flat", bg="#e0e0e0", activebackground="#bdbdbd").pack(side="left", padx=2, pady=2)
+        tk.Button(btn_frame, text="  −  ", command=lambda: _zoom(1.25),
+                  relief="flat", bg="#e0e0e0", activebackground="#bdbdbd").pack(side="left", padx=2, pady=2)
+        tk.Label(btn_frame, text="Zoom", bg="#f0f0f0", fg="#666",
+                 font=("TkDefaultFont", 8)).pack(side="left", padx=2)
 
         self._canvas[symbol]  = canvas
         self._toolbar[symbol] = toolbar
