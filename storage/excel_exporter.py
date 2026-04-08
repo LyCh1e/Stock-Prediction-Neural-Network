@@ -1,8 +1,4 @@
-"""
-Responsible for exporting OHLCV data and predictions to Excel files.
-
-Single Responsibility: Excel I/O only. No ML, no registry logic.
-"""
+# Excel I/O for OHLCV data and predictions — no ML, no registry logic.
 
 from __future__ import annotations
 
@@ -21,8 +17,8 @@ STOCK_DATA_FILE  = "stock_data.xlsx"
 PREDICTIONS_FILE = "stock_predictions.xlsx"
 
 
+# Exports OHLCV history and prediction scenarios to Excel files.
 class ExcelExporter:
-    """Exports OHLCV history and prediction scenarios to Excel files."""
 
     def __init__(
         self,
@@ -36,6 +32,7 @@ class ExcelExporter:
     #  OHLCV data                                                         #
     # ------------------------------------------------------------------ #
 
+    # Write all stocks' OHLCV data to Excel (one sheet per symbol), overwriting the file.
     def export_stock_data(self, stocks: Dict) -> str:
         with _LOCK:
             with pd.ExcelWriter(self._data_file, engine="openpyxl") as writer:
@@ -45,6 +42,7 @@ class ExcelExporter:
                         df_out.to_excel(writer, sheet_name=symbol)
         return os.path.abspath(self._data_file)
 
+    # Append only new rows since the last export; creates the file if it doesn't exist.
     def update_stock_data(self, stocks: Dict) -> str:
         if not os.path.exists(self._data_file):
             return self.export_stock_data(stocks)
@@ -87,6 +85,7 @@ class ExcelExporter:
     #  Predictions                                                        #
     # ------------------------------------------------------------------ #
 
+    # Write all stocks' prediction scenarios to Excel (one sheet per symbol), overwriting the file.
     def export_predictions(self, stocks: Dict) -> str:
         with _LOCK:
             with pd.ExcelWriter(self._pred_file, engine="openpyxl") as writer:
@@ -96,6 +95,7 @@ class ExcelExporter:
                         df_pred.to_excel(writer, sheet_name=symbol, index=False)
         return os.path.abspath(self._pred_file)
 
+    # Append new prediction rows to each symbol's sheet; creates the file if it doesn't exist.
     def update_predictions(self, stocks: Dict) -> str:
         if not os.path.exists(self._pred_file):
             return self.export_predictions(stocks)
@@ -122,6 +122,7 @@ class ExcelExporter:
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Extract and clean the OHLCV DataFrame from a stock entry for Excel export (excludes today).
     @staticmethod
     def _df_for_export(data: Dict) -> Optional[pd.DataFrame]:
         df = data.get("raw_df")
@@ -137,14 +138,8 @@ class ExcelExporter:
         df_out = df_out[df_out.index < today]
         return df_out
 
+    # Reconstruct pred_history from Excel by grouping Best/Average/Worst rows by their export timestamp.
     def load_pred_history(self, symbol: str) -> List[Dict]:
-        """
-        Reconstruct a pred_history list from stock_predictions.xlsx.
-
-        Reads the Best/Average/Worst Case scenario rows and groups them by
-        their shared "Exported At" timestamp to rebuild {date, avg, best, worst}
-        entries — one per export batch.
-        """
         if not os.path.exists(self._pred_file):
             return []
         try:
@@ -189,6 +184,7 @@ class ExcelExporter:
 
         return records
 
+    # Build the predictions DataFrame (scenario rows + daily score rows) ready for Excel export.
     @staticmethod
     def _pred_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         pred = data.get("prediction")
@@ -222,6 +218,7 @@ class ExcelExporter:
             df_pred = pd.concat([df_pred, pd.DataFrame(score_rows)], ignore_index=True)
         return df_pred
 
+    # Build per-prediction score rows (pred vs actual, in-range flag) for the Excel predictions sheet.
     @staticmethod
     def _build_daily_score_rows(symbol: str, data: Dict) -> List[Dict]:
         ph = data.get("pred_history", [])

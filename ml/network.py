@@ -1,21 +1,13 @@
-"""
-Pure two-layer neural network implementation.
-
-Single Responsibility: forward pass, backward pass, weight updates, and
-uncertainty estimation. No data fetching, no persistence, no orchestration.
-"""
+# Pure two-layer neural network: forward/backward pass, weight updates, uncertainty estimation.
+# No data fetching, no persistence, no orchestration.
 
 from __future__ import annotations
 from typing import Tuple
 import numpy as np
 
 
+# Two-layer network: Input → Hidden (ReLU) → Output (5: open, high, low, close, volume).
 class NeuralNetwork:
-    """
-    Two-layer neural network for multi-output stock price prediction.
-
-    Architecture: Input → Hidden (ReLU) → Output (5: open, high, low, close, volume)
-    """
 
     def __init__(
         self,
@@ -40,20 +32,15 @@ class NeuralNetwork:
     #  Forward / Backward                                                 #
     # ------------------------------------------------------------------ #
 
+    # Run input through W1→ReLU→W2; return z1, a1, and output so backward() can reuse them.
     def forward(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Run a forward pass through the network to produce predictions.
-
-        Multiplies the input by the first layer's weights (W1), applies ReLU to
-        introduce non-linearity, then multiplies by the second layer's weights (W2)
-        to produce the final output. Returns the intermediate values z1 and a1 so
-        that backward() can reuse them without recomputing.
-        """
         z1     = np.dot(X, self.W1) + self.b1
         a1     = self._relu(z1)
         output = np.dot(a1, self.W2) + self.b2
         return z1, a1, output
 
+    # Backpropagate MSE loss via chain rule and update W1/b1/W2/b2.
+    # Halves the learning rate for this step if the last 10 losses are highly variable.
     def backward(
         self,
         X: np.ndarray,
@@ -62,15 +49,6 @@ class NeuralNetwork:
         a1: np.ndarray,
         output: np.ndarray,
     ) -> None:
-        """
-        Compute gradients and update all weights and biases via gradient descent.
-
-        Uses the chain rule to propagate the MSE loss backwards from the output
-        layer through to the input layer. Gradients for each weight matrix are
-        computed as dot products between upstream error signals and activations.
-        If the last 10 losses are highly variable (std > 50% of mean), the
-        learning rate is halved for this step to stabilise training.
-        """
         m = X.shape[0]
 
         dL_doutput = 2 * (output - y) / m
@@ -98,28 +76,16 @@ class NeuralNetwork:
     #  Training helpers                                                   #
     # ------------------------------------------------------------------ #
 
+    # Run one forward+backward pass, record the MSE loss, and return it.
     def train_step(self, X: np.ndarray, y: np.ndarray) -> float:
-        """
-        Perform one complete training iteration on a batch of data.
-
-        Runs a forward pass to get predictions, computes MSE loss, appends it
-        to the loss history, then runs a backward pass to update the weights.
-        Returns the loss so the caller can track training progress.
-        """
         z1, a1, output = self.forward(X)
         loss = float(np.mean((output - y) ** 2))
         self.losses.append(loss)
         self.backward(X, y, z1, a1, output)
         return loss
 
+    # Run one forward+backward pass on new data for online/adaptive learning; records MAE.
     def incremental_update(self, X_new: np.ndarray, y_new: np.ndarray) -> None:
-        """
-        Update the network weights with a single new data point or small batch.
-
-        Intended for online/adaptive learning after initial training — e.g. when
-        fresh market data arrives. Runs one forward+backward pass and records the
-        mean absolute error so prediction accuracy can be tracked over time.
-        """
         z1, a1, output = self.forward(X_new)
         self.backward(X_new, y_new, z1, a1, output)
         error = float(np.mean(np.abs(output - y_new)))
@@ -129,28 +95,15 @@ class NeuralNetwork:
     #  Inference                                                          #
     # ------------------------------------------------------------------ #
 
+    # Run a forward pass and return the output array (point estimate, no uncertainty).
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """
-        Produce a single deterministic prediction for the given input.
-
-        Runs a forward pass and returns only the output array, discarding the
-        intermediate values. Use this when you need a point estimate and do not
-        need uncertainty information.
-        """
         _, _, output = self.forward(X)
         return output
 
+    # Run num_samples noisy forward passes via Monte Carlo; return (mean, std) across samples.
     def predict_with_uncertainty(
         self, X: np.ndarray, num_samples: int = 100
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Estimate prediction uncertainty using Monte Carlo sampling.
-
-        Runs `num_samples` forward passes, each time adding a small amount of
-        Gaussian noise (mean=0, std=0.02) to the output to simulate variability.
-        Returns the mean and standard deviation across all samples — a higher
-        std indicates the network is less confident about that prediction.
-        """
         preds = []
         for _ in range(num_samples):
             _, _, output = self.forward(X)
@@ -162,24 +115,12 @@ class NeuralNetwork:
     #  Activation functions                                               #
     # ------------------------------------------------------------------ #
 
+    # Clamp negatives to zero element-wise (ReLU activation).
     @staticmethod
     def _relu(x: np.ndarray) -> np.ndarray:
-        """
-        Apply the ReLU activation function element-wise.
-
-        Clamps all negative values to zero, letting positive values pass through
-        unchanged. This introduces non-linearity so the network can learn
-        non-linear relationships in the data.
-        """
         return np.maximum(0, x)
 
+    # Return 1 where x > 0, else 0 — gates gradients during backprop (ReLU derivative).
     @staticmethod
     def _relu_derivative(x: np.ndarray) -> np.ndarray:
-        """
-        Compute the derivative of ReLU element-wise.
-
-        Returns 1 where the pre-activation value was positive, 0 elsewhere.
-        Used during backpropagation to gate the gradient flowing back through
-        the hidden layer — neurons that were "off" (x <= 0) receive no gradient.
-        """
         return (x > 0).astype(float)

@@ -1,9 +1,4 @@
-"""
-Stock Manager tab widget.
-
-Single Responsibility: render and handle the Stock Manager UI tab.
-All data operations are delegated to the StockRegistry via callbacks.
-"""
+# Stock Manager tab widget — renders the UI and delegates all data operations via callbacks.
 
 from __future__ import annotations
 
@@ -13,23 +8,8 @@ from datetime import datetime
 from typing import Callable, List
 
 
+# The Stock Manager tab: add/remove stocks, trigger predict/update, show table and log.
 class StockManagerTab(ttk.Frame):
-    """
-    The 'Stock Manager' tab: add/remove stocks, trigger predict/update,
-    view the tracked-stocks table, and show the activity log.
-
-    Parameters
-    ----------
-    parent          : parent ttk.Notebook
-    on_add          : callback(symbol, lookback, epochs)
-    on_remove       : callback(symbols: List[str])
-    on_predict_all  : callback()
-    on_update_all   : callback()
-    on_export_data  : callback()
-    on_update_data  : callback()
-    on_export_preds : callback()
-    on_update_preds : callback()
-    """
 
     _SIGNAL_MAP     = {"STRONG SELL": 0, "SELL": 1, "HOLD": 2, "BUY": 3, "STRONG BUY": 4}
     _SIGNAL_COLOURS = ["#d32f2f", "#e57373", "#bdbdbd", "#81c784", "#2e7d32"]
@@ -68,14 +48,17 @@ class StockManagerTab(ttk.Frame):
     #  Public API (called by the main app)                                #
     # ------------------------------------------------------------------ #
 
+    # Append a timestamped message to the activity log and scroll to the bottom.
     def log(self, msg: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{ts}] {msg}\n")
         self.log_text.see(tk.END)
 
+    # Update the bottom status bar text.
     def set_status(self, text: str) -> None:
         self.status_var.set(text)
 
+    # Update the pull indicator dot colour and last-updated label based on ok/error status.
     def set_pull_status(self, status: str, symbol: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         if status == "ok":
@@ -85,12 +68,13 @@ class StockManagerTab(ttk.Frame):
             self.pull_dot.config(foreground="#c62828")
             self.last_pull_var.set(f"Last updated: {symbol} @ {ts} — failed")
 
+    # Update the market status label text and indicator dot colour.
     def set_market_status(self, label: str, colour: str) -> None:
         self.market_status_var.set(f"Market: {label}")
         self.market_dot.config(foreground=colour)
 
+    # Upsert a row in the tracked-stocks table with the latest prediction and status data.
     def update_row(self, symbol: str, data: dict) -> None:
-        """Upsert a row in the tracked-stocks table."""
         pred   = data.get("prediction")
         status = data.get("status", "—")
 
@@ -114,10 +98,12 @@ class StockManagerTab(ttk.Frame):
             icon = "▲ " if sentiment in ("Very Bullish", "Bullish") else "▼ " if sentiment in ("Very Bearish", "Bearish") else "— "
             self.tree.item(symbol, values=(symbol, current, icon + sentiment, conf, signal, status))
 
+    # Delete symbol's row from the table if it exists.
     def remove_row(self, symbol: str) -> None:
         if self._tree_has(symbol):
             self.tree.delete(symbol)
 
+    # Return the list of symbol IIDs currently selected in the table.
     def selected_symbols(self) -> List[str]:
         return list(self.tree.selection())
 
@@ -125,6 +111,7 @@ class StockManagerTab(ttk.Frame):
     #  Widget construction                                                #
     # ------------------------------------------------------------------ #
 
+    # Build the "Add Stock" control row with symbol entry, lookback/epoch spinboxes, and Add button.
     def _build_controls(self) -> None:
         ctrl = ttk.LabelFrame(self, text="Add Stock", padding="6")
         ctrl.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
@@ -143,6 +130,7 @@ class StockManagerTab(ttk.Frame):
 
         ttk.Button(ctrl, text="Add & Train", command=self._add_stock).grid(row=0, column=6, padx=5)
 
+    # Build the status bar showing last-pull dot/label and market open/closed indicator.
     def _build_status_bar(self) -> None:
         bar = ttk.Frame(self)
         bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
@@ -157,6 +145,7 @@ class StockManagerTab(ttk.Frame):
         self.market_status_var = tk.StringVar(value="Market: —")
         tk.Label(bar, textvariable=self.market_status_var, font=("Helvetica", 9, "bold"), foreground="#333").pack(side="right", padx=(0, 2))
 
+    # Build the tracked-stocks Treeview table with columns and colour-coded row tags.
     def _build_table(self) -> None:
         tbl = ttk.LabelFrame(self, text="Tracked Stocks", padding="6")
         tbl.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
@@ -176,6 +165,7 @@ class StockManagerTab(ttk.Frame):
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
 
+    # Build the row of action buttons (Predict All, Update All, Remove, Export, View Score).
     def _build_action_buttons(self) -> None:
         btn = ttk.Frame(self)
         btn.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
@@ -189,6 +179,7 @@ class StockManagerTab(ttk.Frame):
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
 
+    # Build the scrollable activity log text widget.
     def _build_log(self) -> None:
         log_f = ttk.LabelFrame(self, text="Log", padding="4")
         log_f.grid(row=4, column=0, sticky="ew", padx=8, pady=4)
@@ -196,6 +187,7 @@ class StockManagerTab(ttk.Frame):
         self.log_text = scrolledtext.ScrolledText(log_f, height=6, wrap=tk.WORD, font=("Courier", 9))
         self.log_text.grid(row=0, column=0, sticky="ew")
 
+    # Build the sunken status label at the bottom of the tab.
     def _build_status_label(self) -> None:
         self.status_var = tk.StringVar(value="Ready — add stocks to begin")
         ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w"
@@ -205,6 +197,7 @@ class StockManagerTab(ttk.Frame):
     #  Button handlers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Validate the symbol entry and fire the on_add callback; clear the entry on success.
     def _add_stock(self) -> None:
         symbol = self.symbol_var.get().strip().upper()
         if not symbol:
@@ -213,6 +206,7 @@ class StockManagerTab(ttk.Frame):
         self._on_add(symbol, self.lookback_var.get(), self.epochs_var.get())
         self.symbol_var.set("")
 
+    # Confirm with the user then fire on_remove for all selected symbols.
     def _remove_selected(self) -> None:
         syms = self.selected_symbols()
         if not syms:
@@ -221,6 +215,7 @@ class StockManagerTab(ttk.Frame):
         if messagebox.askyesno("Confirm", f"Remove {', '.join(syms)}?"):
             self._on_remove(syms)
 
+    # Validate a single selection and fire the on_view_score callback for it.
     def _view_score(self) -> None:
         syms = self.selected_symbols()
         if not syms:
@@ -232,6 +227,7 @@ class StockManagerTab(ttk.Frame):
     #  Helpers                                                            #
     # ------------------------------------------------------------------ #
 
+    # Return True if iid exists in the Treeview (suppresses the TclError from missing items).
     def _tree_has(self, iid: str) -> bool:
         try:
             self.tree.item(iid)

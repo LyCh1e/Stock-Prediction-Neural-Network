@@ -1,11 +1,9 @@
-"""
-Entry point for the Stock Price Predictor.
-Checks dependencies, then delegates to ui.app.main().
-"""
+# Entry point: checks dependencies then delegates to ui.app.main().
 
 import os
 import sys
 
+# Check that all required packages are importable; return a list of missing ones.
 def check_dependencies() -> list:
     required = ["numpy", "pandas", "requests", "matplotlib", "tkinter", "yfinance", "openpyxl"]
     missing  = []
@@ -17,6 +15,7 @@ def check_dependencies() -> list:
     return missing
 
 
+# Validate dependencies and launch the GUI, exiting with an error message on failure.
 def main() -> None:
     print("=" * 60)
     print("Stock Price Predictor — Neural Network")

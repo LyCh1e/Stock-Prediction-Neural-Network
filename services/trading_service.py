@@ -1,12 +1,5 @@
-"""
-Orchestrates data fetching, model training, and prediction for one symbol.
-
-Single Responsibility: coordinate the data / ML layers to produce a trained
-model and predictions. Does not persist anything or manage the stock registry.
-
-Depends on abstractions (IDataFetcher) rather than concretions — satisfying
-the Dependency Inversion Principle.
-"""
+# Orchestrates data fetching, training, and prediction for one symbol.
+# Coordinates the data/ML layers; no persistence, no registry management.
 
 from __future__ import annotations
 
@@ -21,17 +14,8 @@ from ml.predictor import StockPredictor
 from ml.trainer import ModelTrainer
 
 
+# Coordinates data fetching, training, prediction, and adaptive updates for a symbol.
 class StockTradingService:
-    """
-    Coordinates data fetching, training, prediction, and adaptive updates.
-
-    Parameters
-    ----------
-    fetcher        : Any IDataFetcher implementation (e.g. YahooFinanceFetcher)
-    trainer        : ModelTrainer instance
-    predictor      : StockPredictor instance
-    lookback_window: Number of historical days used as one input sequence
-    """
 
     def __init__(
         self,
@@ -49,6 +33,7 @@ class StockTradingService:
     #  Public interface                                                   #
     # ------------------------------------------------------------------ #
 
+    # Fetch OHLCV data, build sequences, run training, and return (data_points, raw_df, scaler_params).
     def train(
         self,
         symbol: str,
@@ -56,21 +41,6 @@ class StockTradingService:
         epochs: int = 200,
         lookback_window: Optional[int] = None,
     ) -> Tuple[int, pd.DataFrame, Dict]:
-        """
-        Fetch data, prepare sequences, train *network*, return results.
-
-        Parameters
-        ----------
-        lookback_window : override the service default; use the per-stock value
-                          so the sequence shape always matches the network's
-                          input_size (network.input_size == lookback * 12).
-
-        Returns
-        -------
-        data_points   : number of OHLCV rows fetched
-        raw_df        : the full fetched DataFrame (for charting / scoring)
-        scaler_params : normalisation parameters (needed for inference)
-        """
         lookback   = lookback_window if lookback_window is not None else self.lookback_window
         end_date   = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
@@ -97,6 +67,7 @@ class StockTradingService:
 
         return len(df), df, scaler_params
 
+    # Fetch fresh sentiment and run the predictor to produce a next-day prediction result dict.
     def predict(
         self,
         symbol: str,
@@ -106,11 +77,6 @@ class StockTradingService:
         include_scenarios: bool = True,
         lookback_window: Optional[int] = None,
     ) -> Dict:
-        """
-        Generate next-day prediction using *network* and current *df*.
-
-        The sentiment is fetched fresh for every prediction call.
-        """
         lookback  = lookback_window if lookback_window is not None else self.lookback_window
         sentiment = self._fetcher.get_market_sentiment(symbol)
         result    = self._predictor.predict_next_day(
@@ -121,6 +87,7 @@ class StockTradingService:
             result["recommendation"] = self._fetcher.get_trading_recommendation(symbol, result)
         return result
 
+    # Fetch recent data and do one incremental learning step to keep the model current.
     def adaptive_update(
         self,
         symbol: str,
@@ -128,10 +95,6 @@ class StockTradingService:
         scaler_params: Dict,
         lookback_window: Optional[int] = None,
     ) -> None:
-        """
-        Fetch recent data and do a single incremental learning step on the
-        last few sequences — keeps the model current without full retraining.
-        """
         lookback   = lookback_window if lookback_window is not None else self.lookback_window
         end_date   = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=max(30, lookback * 3))).strftime("%Y-%m-%d")
@@ -143,8 +106,8 @@ class StockTradingService:
         if len(X_recent) > 0:
             network.incremental_update(X_recent, y_recent)
 
+    # Fetch the last `days` of OHLCV data for symbol from the configured fetcher.
     def fetch_data(self, symbol: str, days: int = 180) -> pd.DataFrame:
-        """Fetch *days* of OHLCV data for *symbol*."""
         end_date   = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         return self._fetcher.fetch_stock_data(symbol, start_date, end_date)

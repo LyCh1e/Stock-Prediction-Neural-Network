@@ -1,9 +1,5 @@
-"""
-Charts tab widget: one sub-tab per tracked stock with a Matplotlib chart.
-
-Single Responsibility: chart rendering, hover tooltips, and navigation
-toolbar. No data fetching, ML, or registry logic.
-"""
+# Charts tab widget: one sub-tab per tracked stock with a Matplotlib chart.
+# Handles rendering, hover tooltips, zoom buttons, and the navigation toolbar only.
 
 from __future__ import annotations
 
@@ -21,8 +17,8 @@ from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
+# Tab containing one sub-tab per tracked stock, each with a price chart.
 class ChartsTab(ttk.Frame):
-    """Tab containing one sub-tab per tracked stock, each with a price chart."""
 
     def __init__(self, parent) -> None:
         super().__init__(parent)
@@ -49,20 +45,22 @@ class ChartsTab(ttk.Frame):
         self._view:    Dict[str, tuple]                 = {}   # saved (xlim, ylim)
         self._store_ref = None   # set by the app after construction
 
+    # Inject the StockRegistry so charts can pull live data when rendering.
     def set_store(self, store) -> None:
-        """Inject the StockRegistry so charts can pull live data."""
         self._store_ref = store
 
     # ------------------------------------------------------------------ #
     #  Public API                                                         #
     # ------------------------------------------------------------------ #
 
+    # Create a sub-tab for symbol if one doesn't already exist.
     def ensure_tab(self, symbol: str) -> None:
         if symbol not in self._tabs:
             frame = ttk.Frame(self._nb)
             self._nb.add(frame, text=f"  {symbol}  ")
             self._tabs[symbol] = frame
 
+    # Remove symbol's sub-tab, disconnect its hover handler, and close its Matplotlib figure.
     def remove_tab(self, symbol: str) -> None:
         if symbol in self._tabs:
             frame = self._tabs.pop(symbol)
@@ -80,6 +78,7 @@ class ChartsTab(ttk.Frame):
         self._canvas.pop(symbol, None)
         self._toolbar.pop(symbol, None)
 
+    # Pull data from the registry and render the chart for symbol.
     def draw(self, symbol: str) -> None:
         if self._store_ref is None:
             return
@@ -89,6 +88,7 @@ class ChartsTab(ttk.Frame):
         self.ensure_tab(symbol)
         self._render(symbol, data)
 
+    # Redraw the chart for every currently tracked symbol.
     def refresh_all(self) -> None:
         if self._store_ref is None:
             return
@@ -99,6 +99,8 @@ class ChartsTab(ttk.Frame):
     #  Chart rendering                                                    #
     # ------------------------------------------------------------------ #
 
+    # Destroy the old canvas, build a new Matplotlib figure with price history and predictions,
+    # embed it in the tab, and attach the hover crosshair and zoom buttons.
     def _render(self, symbol: str, data: dict) -> None:
         frame = self._tabs[symbol]
 

@@ -1,14 +1,6 @@
-"""
-Concrete IDataFetcher implementation using Yahoo Finance (yfinance).
-
-Responsibilities (Single Responsibility):
-  - Fetch OHLCV data from Yahoo Finance
-  - Generate synthetic fallback data when the API is unavailable
-  - Compute market sentiment from technical indicators
-  - Compute trading recommendations from prediction output
-
-Depends on TechnicalIndicators (not on any ML or storage module).
-"""
+# Concrete IDataFetcher implementation using Yahoo Finance (yfinance).
+# Fetches OHLCV data, falls back to synthetic data when the API is unavailable,
+# computes market sentiment from indicators, and derives trading recommendations.
 
 from __future__ import annotations
 
@@ -22,9 +14,10 @@ from core.interfaces import IDataFetcher
 from data.indicators import TechnicalIndicators
 
 
+# Fetches stock data from Yahoo Finance with a synthetic-data fallback.
 class YahooFinanceFetcher(IDataFetcher):
-    """Fetches stock data from Yahoo Finance with a synthetic-data fallback."""
 
+    # Import the yfinance library at construction time, raising if it is not installed.
     def __init__(self) -> None:
         try:
             import yfinance as yf
@@ -36,6 +29,8 @@ class YahooFinanceFetcher(IDataFetcher):
     #  IDataFetcher implementation                                        #
     # ------------------------------------------------------------------ #
 
+    # Download OHLCV data from Yahoo Finance for the given symbol and date range,
+    # falling back to synthetic data if the request fails.
     def fetch_stock_data(
         self,
         symbol: str,
@@ -76,6 +71,8 @@ class YahooFinanceFetcher(IDataFetcher):
             df = self._generate_synthetic_data(symbol, start_date, end_date)
             return TechnicalIndicators.calculate(df, min_window=5)
 
+    # Fetch recent price data and derive a sentiment label, confidence, and score
+    # from RSI, MACD, moving averages, and volume.
     def get_market_sentiment(self, symbol: str) -> Dict:
         try:
             end_date   = datetime.now().strftime("%Y-%m-%d")
@@ -136,6 +133,8 @@ class YahooFinanceFetcher(IDataFetcher):
             print(f"Error calculating sentiment for {symbol}: {exc}")
             return self._default_sentiment()
 
+    # Combine predicted profit, confidence, sentiment, and risk/reward into a
+    # STRONG_BUY / BUY / HOLD / SELL / STRONG_SELL signal string.
     def get_trading_recommendation(self, symbol: str, prediction: Dict) -> str:
         try:
             sentiment    = prediction.get("sentiment_analysis", {})
@@ -185,6 +184,8 @@ class YahooFinanceFetcher(IDataFetcher):
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Generate realistic-looking synthetic OHLCV data via a geometric Brownian motion
+    # walk seeded from the symbol string, used when Yahoo Finance is unreachable.
     def _generate_synthetic_data(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         start  = datetime.strptime(start_date, "%Y-%m-%d")
         end    = datetime.strptime(end_date,   "%Y-%m-%d")
@@ -217,6 +218,7 @@ class YahooFinanceFetcher(IDataFetcher):
         df.set_index("date", inplace=True)
         return df
 
+    # Return a neutral sentinel sentiment dict used when calculation fails.
     @staticmethod
     def _default_sentiment() -> Dict:
         return {

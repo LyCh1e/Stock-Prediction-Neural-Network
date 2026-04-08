@@ -1,13 +1,5 @@
-"""
-Main application window: composes StockManagerTab + ChartsTab, wires the
-message-queue bridge, and hosts the background auto-update threads.
-
-Single Responsibility: root window setup, tab composition, and the
-message-queue dispatch loop. All domain work is delegated to StockRegistry.
-
-Dependency Inversion: the app knows about the abstract StockRegistry
-interface, not about fetchers, repositories, or ML internals.
-"""
+# Main application window: composes StockManagerTab + ChartsTab, wires the message-queue bridge,
+# and hosts the background auto-update threads. All domain work is delegated to StockRegistry.
 
 from __future__ import annotations
 
@@ -24,13 +16,8 @@ from ui.chart_tab import ChartsTab
 from ui.stock_tab import StockManagerTab
 
 
+# Root application window — composes the two tabs, owns the message queue, starts background threads.
 class StockPriceApp:
-    """
-    Root application window.
-
-    Composes the two main tabs, owns the message queue, and starts the
-    background auto-update threads.
-    """
 
     def __init__(self, root: tk.Tk, registry: StockRegistry) -> None:
         self.root     = root
@@ -58,6 +45,7 @@ class StockPriceApp:
     #  Tab construction                                                   #
     # ------------------------------------------------------------------ #
 
+    # Create the Notebook, add the Stock Manager and Charts tabs, and wire their callbacks.
     def _build_tabs(self) -> None:
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=6, pady=6)
@@ -84,6 +72,7 @@ class StockPriceApp:
     #  Stock actions                                                      #
     # ------------------------------------------------------------------ #
 
+    # Add symbol to the registry, update the table row, and ensure a chart tab exists.
     def _add_stock(self, symbol: str, lookback: int, epochs: int) -> None:
         if self.registry.has(symbol):
             messagebox.showwarning("Warning", f"{symbol} is already tracked.")
@@ -93,6 +82,7 @@ class StockPriceApp:
         self._chart_tab.ensure_tab(symbol)
         self._stock_tab.log(f"Queued training for {symbol}")
 
+    # Remove each symbol from the table, registry, and chart tabs.
     def _remove_stocks(self, symbols: list) -> None:
         for sym in symbols:
             self._stock_tab.remove_row(sym)
@@ -100,14 +90,17 @@ class StockPriceApp:
             self._chart_tab.remove_tab(sym)
             self._stock_tab.log(f"Removed {sym}")
 
+    # Trigger a background prediction for every tracked symbol.
     def _predict_all(self) -> None:
         for sym in self.registry.symbols():
             self.registry.predict(sym)
 
+    # Trigger a background adaptive update for every tracked symbol.
     def _update_all(self) -> None:
         for sym in self.registry.symbols():
             self.registry.update(sym)
 
+    # Write fresh OHLCV data to Excel for all trained stocks, showing the path on success.
     def _update_data(self) -> None:
         if not any(d.get("raw_df") is not None for d in self.registry.stocks.values()):
             messagebox.showinfo("Info", "No stock data yet. Train a stock first.")
@@ -118,6 +111,7 @@ class StockPriceApp:
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
 
+    # Write latest predictions to Excel for all predicted stocks, showing the path on success.
     def _update_preds(self) -> None:
         if not any(d.get("prediction") is not None for d in self.registry.stocks.values()):
             messagebox.showinfo("Info", "No predictions yet. Train and predict first.")
@@ -132,6 +126,7 @@ class StockPriceApp:
     #  Prediction score viewer                                            #
     # ------------------------------------------------------------------ #
 
+    # Open the score viewer window for symbol; brings existing window to front if already open.
     def _view_score(self, symbol: str) -> None:
         import math
         import pandas as pd
@@ -288,21 +283,24 @@ class StockPriceApp:
     #  Auto-update background threads                                     #
     # ------------------------------------------------------------------ #
 
+    # Run a manual GC cycle every 5 seconds to avoid background-thread collection issues.
     def _run_gc(self) -> None:
         gc.collect()
         if self._running:
             self.root.after(5000, self._run_gc)
 
+    # Stop all loops and quit the Tk main loop when the window is closed.
     def _on_close(self) -> None:
         self._running = False
         self.root.quit()
 
+    # Launch the background auto-update and auto-predict daemon threads.
     def _start_auto_threads(self) -> None:
         threading.Thread(target=self._auto_update_loop,  daemon=True).start()
         threading.Thread(target=self._auto_predict_loop, daemon=True).start()
 
+    # Round-robin adaptive updates across all symbols at ~1000 calls/hour.
     def _auto_update_loop(self) -> None:
-        """Round-robin adaptive updates at ~1000 calls/hour."""
         interval = 3600 / 1000
         idx = 0
         while self._running:
@@ -314,8 +312,8 @@ class StockPriceApp:
                 self.registry.update(syms[idx % len(syms)])
                 idx += 1
 
+    # Refresh predictions for all symbols every 5 minutes.
     def _auto_predict_loop(self) -> None:
-        """Refresh all predictions every 5 minutes."""
         while self._running:
             time.sleep(300)
             if not self._running:
@@ -327,11 +325,12 @@ class StockPriceApp:
     #  Message queue bridge (background → Tk main thread)                #
     # ------------------------------------------------------------------ #
 
+    # Thread-safe: enqueue a (msg_type, payload) message for the Tk main thread to handle.
     def post(self, msg_type: str, payload) -> None:
-        """Thread-safe: post a message for the Tk main thread to handle."""
         if self._running:
             self._queue.put((msg_type, payload))
 
+    # Drain the message queue and dispatch each message to the appropriate UI update; reschedules itself.
     def _process_queue(self) -> None:
         try:
             while True:
@@ -359,6 +358,7 @@ class StockPriceApp:
     #  Market status ticker                                               #
     # ------------------------------------------------------------------ #
 
+    # Check current ET time and update the market status indicator; reschedules itself every minute.
     def _tick_market_status(self) -> None:
         from datetime import time as dtime
         from zoneinfo import ZoneInfo
@@ -381,13 +381,8 @@ class StockPriceApp:
         self.root.after(60_000, self._tick_market_status)
 
 
+# Factory: wire all concrete dependencies and return a ready-to-run StockPriceApp.
 def create_app(root: tk.Tk) -> StockPriceApp:
-    """
-    Factory function: wire all dependencies and return a ready-to-run app.
-
-    This is the single place where concrete implementations are chosen,
-    satisfying the Dependency Inversion Principle.
-    """
     from data.fetcher import YahooFinanceFetcher
     from ml.network import NeuralNetwork
     from ml.predictor import StockPredictor
@@ -411,6 +406,7 @@ def create_app(root: tk.Tk) -> StockPriceApp:
     # The message callback posts into the app's queue
     app_holder: list = []
 
+    # Forward messages from background threads to the app's queue once the app is created.
     def message_cb(msg_type: str, payload) -> None:
         if app_holder:
             app_holder[0].post(msg_type, payload)
@@ -429,6 +425,7 @@ def create_app(root: tk.Tk) -> StockPriceApp:
     return app
 
 
+# Create the Tk root, build the app, and enter the main loop.
 def main() -> None:
     root = tk.Tk()
     create_app(root)

@@ -1,9 +1,6 @@
-"""
-Single-responsibility module for computing technical indicators on OHLCV data.
-
-All indicator logic is isolated here so it can be tested, swapped, or extended
-independently of the data-fetching or ML layers.
-"""
+# Single-responsibility module for computing technical indicators on OHLCV data.
+# All indicator logic is isolated here so it can be tested, swapped, or extended
+# independently of the data-fetching or ML layers.
 
 from __future__ import annotations
 
@@ -11,25 +8,13 @@ import numpy as np
 import pandas as pd
 
 
+# Stateless helper — all methods are static, no instance state needed.
 class TechnicalIndicators:
-    """
-    Stateless helper that adds technical indicator columns to an OHLCV DataFrame.
 
-    All methods are static — no instance state is needed.
-    """
-
+    # Compute and attach all technical indicator columns to df in-place.
+    # Auto-scales rolling window sizes based on available data length.
     @staticmethod
     def calculate(df: pd.DataFrame, min_window: int = 5) -> pd.DataFrame:
-        """
-        Compute and attach all technical indicator columns to *df* in-place.
-
-        Parameters
-        ----------
-        df         : DataFrame with columns open, high, low, close, volume
-        min_window : minimum rolling window size (auto-scales for short data)
-
-        Returns the same DataFrame with added indicator columns.
-        """
         data_length = len(df)
 
         sma_short, sma_long, rsi_period, vol_period = TechnicalIndicators._window_sizes(
@@ -55,6 +40,7 @@ class TechnicalIndicators:
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Choose rolling window sizes that scale gracefully with available data length.
     @staticmethod
     def _window_sizes(data_length: int, min_window: int):
         if min_window is not None:
@@ -78,11 +64,13 @@ class TechnicalIndicators:
         vol_period = max(2, vol_period)
         return sma_short, sma_long, rsi_period, vol_period
 
+    # Add short and long simple moving average columns (sma_20 / sma_50) to df.
     @staticmethod
     def _add_moving_averages(df: pd.DataFrame, sma_short: int, sma_long: int) -> None:
         df["sma_20"] = df["close"].rolling(window=sma_short, min_periods=1).mean()
         df["sma_50"] = df["close"].rolling(window=sma_long,  min_periods=1).mean()
 
+    # Compute the Relative Strength Index using rolling average gains and losses.
     @staticmethod
     def _add_rsi(df: pd.DataFrame, rsi_period: int) -> None:
         delta = df["close"].diff()
@@ -92,6 +80,7 @@ class TechnicalIndicators:
         df["rsi"] = 100 - (100 / (1 + rs))
         df["rsi"].fillna(50, inplace=True)
 
+    # Add Bollinger Band columns (middle, upper, lower) using rolling std around the short SMA.
     @staticmethod
     def _add_bollinger_bands(df: pd.DataFrame, sma_short: int) -> None:
         df["bb_middle"] = df["close"].rolling(window=sma_short, min_periods=1).mean()
@@ -99,24 +88,28 @@ class TechnicalIndicators:
         df["bb_upper"]  = df["bb_middle"] + bb_std * 2
         df["bb_lower"]  = df["bb_middle"] - bb_std * 2
 
+    # Add volume SMA and volume ratio (current vs rolling average) columns.
     @staticmethod
     def _add_volume_indicators(df: pd.DataFrame, vol_period: int) -> None:
         df["volume_sma"]   = df["volume"].rolling(window=vol_period, min_periods=1).mean()
         df["volume_ratio"] = df["volume"] / (df["volume_sma"] + 1e-8)
         df["volume_ratio"].fillna(1.0, inplace=True)
 
+    # Add daily return and rolling standard deviation (volatility) columns.
     @staticmethod
     def _add_volatility(df: pd.DataFrame, vol_period: int) -> None:
         df["daily_return"] = df["close"].pct_change()
         df["volatility"]   = df["daily_return"].rolling(window=vol_period, min_periods=1).std()
         df["volatility"].fillna(0.01, inplace=True)
 
+    # Add momentum column as the difference between current close and close N periods ago.
     @staticmethod
     def _add_momentum(df: pd.DataFrame, data_length: int) -> None:
         momentum_period = min(10, data_length - 1)
         df["momentum"] = df["close"] - df["close"].shift(momentum_period)
         df["momentum"].fillna(0, inplace=True)
 
+    # Add MACD and signal line columns using short/long exponential moving averages.
     @staticmethod
     def _add_macd(df: pd.DataFrame, data_length: int) -> None:
         ema_short  = min(12, data_length - 1)

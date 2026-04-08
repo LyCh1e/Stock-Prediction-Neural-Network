@@ -1,10 +1,5 @@
-"""
-Responsible for generating predictions, scenarios, confidence scores,
-and technical indicator summaries from a trained NeuralNetwork.
-
-Single Responsibility: inference & result construction.
-Does not fetch data, train, or persist anything.
-"""
+# Generates predictions, scenarios, confidence scores, and indicator summaries from a trained network.
+# Inference and result construction only — no data fetching, training, or persistence.
 
 from __future__ import annotations
 
@@ -19,15 +14,13 @@ from ml.network import NeuralNetwork
 from ml.trainer import ModelTrainer, _FEATURE_COLS
 
 
+# Stateless predictor — turns a trained NeuralNetwork + DataFrame into a structured result dict.
 class StockPredictor:
-    """
-    Stateless predictor that turns a trained NeuralNetwork + DataFrame into
-    a structured prediction result dict.
-    """
 
     def __init__(self, trainer: ModelTrainer) -> None:
         self._trainer = trainer
 
+    # Run Monte Carlo inference and build the full prediction result dict including scenarios.
     def predict_next_day(
         self,
         symbol: str,
@@ -38,7 +31,6 @@ class StockPredictor:
         lookback_window: int,
         include_scenarios: bool = True,
     ) -> Dict:
-        """Build and return a full prediction result dict."""
         if "sma_20" not in df.columns or df["sma_20"].isna().all():
             df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
 
@@ -110,6 +102,7 @@ class StockPredictor:
     #  Private: scenario generation                                       #
     # ------------------------------------------------------------------ #
 
+    # Build best/average/worst/realistic-range scenario dicts using volatility and sentiment.
     def _generate_scenarios(
         self,
         current_close: float,
@@ -177,6 +170,7 @@ class StockPredictor:
             "realistic_range": realistic_range,
         }
 
+    # Assemble a single scenario dict from OHLCV values, profit %, target, and stop-loss.
     @staticmethod
     def _scenario(
         open_: float, high: float, low: float, close: float, volume: float,
@@ -199,6 +193,7 @@ class StockPredictor:
     #  Private: confidence calculation                                    #
     # ------------------------------------------------------------------ #
 
+    # Average several confidence factors (data freshness, uncertainty, volatility, loss) into one score.
     def _calculate_confidence(
         self,
         df: pd.DataFrame,
@@ -234,6 +229,7 @@ class StockPredictor:
     #  Private: technical indicator summary                               #
     # ------------------------------------------------------------------ #
 
+    # Extract the latest indicator values from df and attach human-readable status labels.
     @staticmethod
     def _get_technical_indicators(df: pd.DataFrame) -> Dict:
         if len(df) < 5:
@@ -304,6 +300,7 @@ class StockPredictor:
     #  Input construction                                                 #
     # ------------------------------------------------------------------ #
 
+    # Normalise the last lookback_window rows of each feature and flatten into a (1, N) input array.
     @staticmethod
     def _build_input(
         df_feat: pd.DataFrame, scaler_params: Dict, lookback_window: int

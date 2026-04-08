@@ -1,11 +1,5 @@
-"""
-Responsible for data preparation and the training loop.
-
-Single Responsibility: turn a raw OHLCV DataFrame into normalised
-training sequences and run the gradient-descent loop on a NeuralNetwork.
-All feature engineering and normalisation lives here; the NeuralNetwork
-class knows nothing about features or scaling.
-"""
+# Responsible for data preparation and the training loop.
+# Turns a raw OHLCV DataFrame into normalised sequences and runs gradient descent on a NeuralNetwork.
 
 from __future__ import annotations
 
@@ -24,32 +18,19 @@ _FEATURE_COLS = [
 ]
 
 
+# Stateless helper — prepares sequences and runs training epochs; no state of its own.
 class ModelTrainer:
-    """
-    Stateless helper that prepares data and runs training epochs.
-
-    All state (weights, scaler_params) lives in the NeuralNetwork and the
-    returned scaler_params dict — not in this object.
-    """
 
     # ------------------------------------------------------------------ #
     #  Data preparation                                                   #
     # ------------------------------------------------------------------ #
 
+    # Normalise df and build sliding-window sequences; returns X, y, and per-feature scaler_params.
     def prepare_data(
         self,
         df: pd.DataFrame,
         lookback_window: int,
     ) -> Tuple[np.ndarray, np.ndarray, Dict]:
-        """
-        Normalise *df* and create sliding-window sequences.
-
-        Returns
-        -------
-        X            : shape (n_samples, lookback_window * n_features)
-        y            : shape (n_samples, 5)  — next-day OHLCV
-        scaler_params: per-feature mean/std used for normalisation
-        """
         if "sma_20" not in df.columns or df["sma_20"].isna().all():
             df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
 
@@ -65,12 +46,12 @@ class ModelTrainer:
         X, y = self._make_sequences(normalized, lookback_window)
         return X, y, scaler_params
 
+    # Convert normalised OHLCV predictions back to original price scale using stored mean/std.
     def denormalize(
         self,
         predictions_norm: np.ndarray,
         scaler_params: Dict,
     ) -> np.ndarray:
-        """Convert normalised OHLCV predictions back to original price scale."""
         output_cols = ["open", "high", "low", "close", "volume"]
         result = np.zeros_like(predictions_norm)
         for i, col in enumerate(output_cols):
@@ -84,6 +65,7 @@ class ModelTrainer:
     #  Training loop                                                      #
     # ------------------------------------------------------------------ #
 
+    # Run epochs forward+backward passes on network, logging loss every 20 epochs.
     def train(
         self,
         network: NeuralNetwork,
@@ -91,7 +73,6 @@ class ModelTrainer:
         y: np.ndarray,
         epochs: int = 200,
     ) -> None:
-        """Run *epochs* forward+backward passes on the given network."""
         for epoch in range(epochs):
             loss = network.train_step(X, y)
             if epoch % 20 == 0:
@@ -101,6 +82,7 @@ class ModelTrainer:
     #  Recent-data extraction for adaptive updates                        #
     # ------------------------------------------------------------------ #
 
+    # Return the last n sequences from df using existing scaler_params, for incremental updates.
     def recent_sequences(
         self,
         df: pd.DataFrame,
@@ -108,10 +90,6 @@ class ModelTrainer:
         scaler_params: Dict,
         n: int = 3,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Return the last *n* training sequences using pre-computed scaler_params.
-        Used for incremental / adaptive updates.
-        """
         if "sma_20" not in df.columns or df["sma_20"].isna().all():
             df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
 
@@ -126,6 +104,7 @@ class ModelTrainer:
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Z-score normalise all feature columns; return the stacked array and per-column mean/std.
     @staticmethod
     def _normalise(df_feat: pd.DataFrame) -> Tuple[np.ndarray, Dict]:
         cols         = list(df_feat.columns)
@@ -139,6 +118,7 @@ class ModelTrainer:
             normalized.append((values - mean) / std)
         return np.hstack(normalized), scaler_params
 
+    # Normalise df_feat using pre-computed scaler_params (for inference/adaptive updates).
     @staticmethod
     def _normalise_with_params(df_feat: pd.DataFrame, scaler_params: Dict) -> np.ndarray:
         normalized = []
@@ -152,6 +132,7 @@ class ModelTrainer:
                 normalized.append((values - np.mean(values)) / (np.std(values) + 1e-8))
         return np.hstack(normalized)
 
+    # Slide a window over combined to produce X (flattened windows) and y (next-day OHLCV).
     @staticmethod
     def _make_sequences(
         combined: np.ndarray, lookback_window: int

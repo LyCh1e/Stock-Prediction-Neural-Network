@@ -1,9 +1,5 @@
-"""
-Responsible for JSON persistence of trained model weights.
-
-Single Responsibility: save/load weights to/from a single JSON file.
-Does not know about training, predictions, or the GUI.
-"""
+# JSON persistence of trained model weights and scaler params.
+# Save/load only — no training, prediction, or GUI knowledge.
 
 from __future__ import annotations
 
@@ -21,8 +17,8 @@ from ml.network import NeuralNetwork
 _LOCK = threading.Lock()   # module-level lock shared by all instances
 
 
+# Persists NeuralNetwork weights and scaler parameters as JSON.
 class JsonModelRepository(IModelRepository):
-    """Persists NeuralNetwork weights and scaler parameters as JSON."""
 
     def __init__(self, filepath: str = "stock_models.json") -> None:
         self._filepath = filepath
@@ -31,6 +27,7 @@ class JsonModelRepository(IModelRepository):
     #  IModelRepository implementation                                    #
     # ------------------------------------------------------------------ #
 
+    # Serialise model weights and scaler_params to JSON, writing atomically via a temp file.
     def save(self, symbol: str, model: NeuralNetwork, scaler_params: Dict) -> None:
         entry = {
             "timestamp":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -60,6 +57,7 @@ class JsonModelRepository(IModelRepository):
                     pass
             raise exc
 
+    # Read and return the saved entry for symbol from the JSON file, or None if absent.
     def load(self, symbol: str) -> Optional[Dict]:
         if not os.path.exists(self._filepath):
             return None
@@ -69,13 +67,8 @@ class JsonModelRepository(IModelRepository):
         except Exception:
             return None
 
+    # Load saved weights into model in-place; return scaler_params or None on shape mismatch/missing.
     def restore_weights(self, symbol: str, model: NeuralNetwork) -> Optional[Dict]:
-        """
-        Restore weights from the JSON file into *model*.
-
-        Returns the scaler_params dict if successful, None if no saved data
-        or if the saved input_size does not match the current model shape.
-        """
         entry = self.load(symbol)
         if entry is None:
             return None
@@ -98,6 +91,7 @@ class JsonModelRepository(IModelRepository):
     #  Private                                                            #
     # ------------------------------------------------------------------ #
 
+    # Read and return the entire JSON file as a dict, or {} if it doesn't exist.
     def _read_all(self) -> Dict:
         if not os.path.exists(self._filepath):
             return {}

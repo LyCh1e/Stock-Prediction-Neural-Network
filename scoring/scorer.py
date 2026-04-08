@@ -1,21 +1,5 @@
-"""
-Accuracy scoring for the Stock Price Predictor.
-
-Single Responsibility: compute composite accuracy scores from prediction
-history vs actual prices. No data fetching, no persistence, no UI.
-
-Scoring formula
----------------
-  Component                     Weight   What it rewards
-  ─────────────────────────────────────────────────────────
-  A. MAPE accuracy              50 %     How close the predicted price was
-  B. Directional accuracy       30 %     Did the prediction get up/down right?
-  C. Within-range accuracy      20 %     Was the actual close inside the
-                                          predicted best/worst band?
-
-  raw_score = 0.50 * A + 0.30 * B + 0.20 * C    (each already in [0, 1])
-  final_score = round(raw_score * 100, 1)
-"""
+# Computes composite accuracy scores from prediction history vs actual prices.
+# Formula: 50% MAPE closeness + 30% directional accuracy + 20% within-range accuracy.
 
 from __future__ import annotations
 
@@ -34,6 +18,7 @@ _W_RANGE   = 0.20
 _MAPE_DECAY = 0.15   # tune to taste
 
 
+# Compute the composite ScoreResult for a symbol from its prediction history and actual closes.
 def score_symbol(
     pred_history: list,
     raw_df: pd.DataFrame,
@@ -107,6 +92,7 @@ def score_symbol(
 
 # ── Private helpers ───────────────────────────────────────────────────── #
 
+# Convert raw pred_history dicts into PredictionRecord objects, skipping malformed entries.
 def _parse_records(pred_history: list) -> List[PredictionRecord]:
     records = []
     for entry in pred_history:
@@ -127,6 +113,7 @@ def _parse_records(pred_history: list) -> List[PredictionRecord]:
     return records
 
 
+# Fill each record's actual field by looking up the next business day's close in raw_df.
 def _match_actuals(
     records: List[PredictionRecord],
     raw_df: pd.DataFrame,
@@ -149,6 +136,7 @@ def _match_actuals(
     return records
 
 
+# Return the first weekday after dt.
 def _next_business_day(dt: datetime) -> datetime:
     nxt = dt + timedelta(days=1)
     while nxt.weekday() >= 5:
@@ -156,6 +144,7 @@ def _next_business_day(dt: datetime) -> datetime:
     return nxt
 
 
+# Return the close price of the last trading day before prediction_date, or None if unavailable.
 def _prev_close(prediction_date: datetime, raw_df: pd.DataFrame) -> Optional[float]:
     if raw_df is None or raw_df.empty:
         return None
@@ -177,6 +166,7 @@ def _prev_close(prediction_date: datetime, raw_df: pd.DataFrame) -> Optional[flo
     return float(val.item() if hasattr(val, "item") else val)
 
 
+# Build a list of per-prediction breakdown dicts (error %, in-range, direction) for the score window.
 def _build_details(
     matched: List[PredictionRecord],
     raw_df: pd.DataFrame,
@@ -202,6 +192,7 @@ def _build_details(
     return rows
 
 
+# Map a numeric score (0-100) to a letter grade A+ … F.
 def _letter_grade(score: float) -> str:
     if score >= 93: return "A+"
     if score >= 87: return "A"
@@ -218,6 +209,7 @@ def _letter_grade(score: float) -> str:
     return "F"
 
 
+# Build a multi-line human-readable summary of the score result including a verdict.
 def _build_summary(
     score: float,
     grade: str,
@@ -247,6 +239,7 @@ def _build_summary(
     return "\n".join(lines)
 
 
+# Return a zeroed ScoreResult with an explanatory summary when there is no data to score.
 def _insufficient_data_result(reason: str) -> ScoreResult:
     return ScoreResult(
         score=0.0, letter_grade="N/A",

@@ -1,13 +1,5 @@
-"""
-Central in-memory registry for all tracked stocks plus background-thread workers.
-
-Single Responsibility: manage the stock registry lifecycle (add/remove/update)
-and coordinate background operations. Delegates all domain work to injected
-services and repositories — it does not know about ML math or file formats.
-
-Dependency Inversion: depends on IModelRepository, IHistoryRepository,
-ISymbolRepository, and StockTradingService abstractions.
-"""
+# Central in-memory registry for tracked stocks plus background-thread workers.
+# Manages add/remove/update lifecycle and delegates all domain work to injected services.
 
 from __future__ import annotations
 
@@ -24,20 +16,8 @@ from storage.excel_exporter import ExcelExporter
 StockEntry = Dict
 
 
+# Manages all tracked stocks and the background threads that train/predict/update each one.
 class StockRegistry:
-    """
-    Manages all tracked stocks: create, read, update, delete, and the
-    background threads that train / predict / adaptively update each one.
-
-    Parameters
-    ----------
-    message_cb       : thread-safe callback → (msg_type, payload)
-    trading_service  : StockTradingService (orchestrates data + ML)
-    model_repo       : IModelRepository (weight persistence)
-    history_repo     : IHistoryRepository (prediction-history persistence)
-    symbol_repo      : ISymbolRepository (tracked-symbols persistence)
-    excel_exporter   : ExcelExporter (Excel I/O)
-    """
 
     def __init__(
         self,
@@ -64,12 +44,15 @@ class StockRegistry:
     def stocks(self) -> Dict[str, StockEntry]:
         return self._stocks
 
+    # Return the StockEntry for symbol, or None if not tracked.
     def get(self, symbol: str) -> Optional[StockEntry]:
         return self._stocks.get(symbol)
 
+    # Return a snapshot list of all currently tracked symbols.
     def symbols(self):
         return list(self._stocks.keys())
 
+    # Return True if symbol is currently tracked.
     def has(self, symbol: str) -> bool:
         return symbol in self._stocks
 
@@ -77,6 +60,7 @@ class StockRegistry:
     #  Create / Delete                                                    #
     # ------------------------------------------------------------------ #
 
+    # Add symbol to the registry, persist it, and kick off a training thread; returns False if duplicate.
     def add(self, symbol: str, lookback: int = 10, epochs: int = 200) -> bool:
         symbol = symbol.upper()
         if symbol in self._stocks:
@@ -86,6 +70,7 @@ class StockRegistry:
         threading.Thread(target=self._train_thread, args=(symbol,), daemon=True).start()
         return True
 
+    # Remove symbol from the registry and persist the change; returns False if not found.
     def remove(self, symbol: str) -> bool:
         symbol = symbol.upper()
         if symbol not in self._stocks:
@@ -94,15 +79,8 @@ class StockRegistry:
         self._save_symbols()
         return True
 
+    # Merge prediction history from Excel, CSV, and in-memory (in-memory wins); return sorted oldest→newest.
     def full_pred_history(self, symbol: str) -> list:
-        """
-        Return the merged prediction history for *symbol* from all sources,
-        one entry per date, with higher-priority sources overriding lower ones:
-          1. stock_predictions.xlsx  (lowest — export file)
-          2. stock_models_history.csv
-          3. in-memory pred_history  (highest — current session)
-        Sorted oldest → newest.
-        """
         symbol    = symbol.upper()
         excel     = self._exporter.load_pred_history(symbol)
         persisted = self._hist_repo.load(symbol)
@@ -122,9 +100,11 @@ class StockRegistry:
     #  Trigger background operations                                      #
     # ------------------------------------------------------------------ #
 
+    # Spawn a background thread to run a fresh prediction for symbol.
     def predict(self, symbol: str) -> None:
         threading.Thread(target=self._predict_thread, args=(symbol,), daemon=True).start()
 
+    # Spawn a background thread to adaptively update the model for symbol.
     def update(self, symbol: str) -> None:
         threading.Thread(target=self._update_thread, args=(symbol,), daemon=True).start()
 
@@ -132,6 +112,7 @@ class StockRegistry:
     #  Symbol persistence                                                 #
     # ------------------------------------------------------------------ #
 
+    # Load persisted symbols from disk and queue a training thread for each one.
     def load_symbols(self) -> None:
         saved = self._sym_repo.load()
         if not saved:
@@ -154,9 +135,11 @@ class StockRegistry:
     #  Excel export delegates                                             #
     # ------------------------------------------------------------------ #
 
+    # Delegate OHLCV Excel update to the exporter; return the file path.
     def update_stock_data(self) -> str:
         return self._exporter.update_stock_data(self._stocks)
 
+    # Delegate predictions Excel update to the exporter; return the file path.
     def update_predictions(self) -> str:
         return self._exporter.update_predictions(self._stocks)
 
@@ -164,6 +147,7 @@ class StockRegistry:
     #  Background thread workers                                          #
     # ------------------------------------------------------------------ #
 
+    # Background worker: fetch data, train (or resume), predict, save, and notify UI.
     def _train_thread(self, symbol: str) -> None:
         try:
             data    = self._stocks[symbol]
@@ -214,6 +198,7 @@ class StockRegistry:
             self._cb("refresh", symbol)
             self._cb("log",     f"✗ {symbol}: {err}")
 
+    # Background worker: archive previous prediction, fetch fresh data, predict, save, notify UI.
     def _predict_thread(self, symbol: str) -> None:
         try:
             data = self._stocks[symbol]
@@ -241,6 +226,7 @@ class StockRegistry:
         except Exception as exc:
             self._cb("log", f"✗ {symbol} predict error: {exc}")
 
+    # Background worker: adaptively update the model, archive prediction, predict, save, notify UI.
     def _update_thread(self, symbol: str) -> None:
         try:
             data = self._stocks[symbol]
@@ -278,6 +264,7 @@ class StockRegistry:
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
+    # Return a blank StockEntry dict with default fields for a newly added symbol.
     @staticmethod
     def _new_entry(lookback: int, epochs: int) -> StockEntry:
         return {
@@ -292,6 +279,7 @@ class StockRegistry:
             "epochs":        epochs,
         }
 
+    # Persist the current tracked-symbols dict to disk via the symbol repository.
     def _save_symbols(self) -> None:
         try:
             self._sym_repo.save(self._stocks)
@@ -299,6 +287,7 @@ class StockRegistry:
         except Exception as exc:
             self._cb("log", f"Warning: could not save symbols: {exc}")
 
+    # Persist the network weights and prediction history for symbol to their repositories.
     def _save_model(self, symbol: str) -> None:
         data = self._stocks.get(symbol)
         if data is None:
@@ -313,6 +302,7 @@ class StockRegistry:
         except Exception as exc:
             self._cb("log", f"Warning: could not save model for {symbol}: {exc}")
 
+    # Move the current prediction into pred_history (upsert by date) and refresh the accuracy score.
     def _archive_prediction(self, data: StockEntry) -> None:
         old_pred = data.get("prediction")
         if old_pred and "scenarios" in old_pred:

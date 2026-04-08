@@ -1,8 +1,4 @@
-"""
-Responsible for CSV persistence of prediction history.
-
-Single Responsibility: save/load the pred_history list for each symbol.
-"""
+# CSV persistence of prediction history — save/load pred_history per symbol.
 
 from __future__ import annotations
 
@@ -18,8 +14,8 @@ from core.interfaces import IHistoryRepository
 _LOCK = threading.Lock()
 
 
+# Appends prediction history rows to a CSV file, one symbol per group.
 class CsvHistoryRepository(IHistoryRepository):
-    """Appends prediction history rows to a CSV file, one symbol per group."""
 
     def __init__(self, filepath: str = "stock_models_history.csv") -> None:
         self._filepath = filepath
@@ -28,6 +24,7 @@ class CsvHistoryRepository(IHistoryRepository):
     #  IHistoryRepository implementation                                  #
     # ------------------------------------------------------------------ #
 
+    # Write the latest 5 prediction rows for symbol to CSV, replacing any existing rows for that symbol.
     def save(self, symbol: str, pred_history: List[Dict]) -> None:
         if not pred_history:
             return
@@ -66,6 +63,7 @@ class CsvHistoryRepository(IHistoryRepository):
                     pass
             raise exc
 
+    # Read and return the prediction history rows for symbol from CSV as a list of dicts.
     def load(self, symbol: str) -> List[Dict]:
         if not os.path.exists(self._filepath):
             return []
