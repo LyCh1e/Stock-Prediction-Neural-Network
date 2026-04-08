@@ -15,7 +15,8 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
 - **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
 - **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
-- **Background Auto-Updates**: Data refreshed at ~1000 calls/hour across all tracked symbols; predictions refreshed every 5 minutes — current price always reflects the latest fetch — the UI never freezes
+- **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
+- **Live Current Price**: Current Price column reflects the latest traded price (intraday during market hours, official close after market close) — not a stale end-of-previous-day value
 - **Excel Export**: OHLCV history → `stock_data.xlsx`, prediction scenarios + daily scores → `stock_predictions.xlsx`
 
 ## Quick Start
@@ -193,7 +194,7 @@ Updates every 60 seconds automatically.
 | Remove Selected | Remove selected stock(s) from the tracker |
 | Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
-| View Score | Show accuracy score and all archived predictions for the selected stock |
+| View Score | Show accuracy score and all archived predictions for the selected stock — today's Actual Close shows "Pending" until the next trading day |
 | Refresh Charts | Redraw all chart tabs with latest data (Charts tab) |
 
 ### Scenario Generation
