@@ -151,9 +151,10 @@ class StockPriceApp:
                 idx = idx.tz_localize(None)
             close_by_date = dict(zip(idx.normalize(), raw_df["close"].values))
 
+        today = pd.Timestamp(datetime.now().date())
         for r in records:
             ts = pd.Timestamp(r.date).normalize()
-            if ts in close_by_date:
+            if ts in close_by_date and ts < today:
                 r.actual = float(close_by_date[ts])
 
         matched = [r for r in records if r.actual is not None]

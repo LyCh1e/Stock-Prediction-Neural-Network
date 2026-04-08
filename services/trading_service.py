@@ -42,7 +42,7 @@ class StockTradingService:
         lookback_window: Optional[int] = None,
     ) -> Tuple[int, pd.DataFrame, Dict]:
         lookback   = lookback_window if lookback_window is not None else self.lookback_window
-        end_date   = datetime.now().strftime("%Y-%m-%d")
+        end_date   = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
         df         = self._fetcher.fetch_stock_data(symbol, start_date, end_date)
 
@@ -96,7 +96,7 @@ class StockTradingService:
         lookback_window: Optional[int] = None,
     ) -> None:
         lookback   = lookback_window if lookback_window is not None else self.lookback_window
-        end_date   = datetime.now().strftime("%Y-%m-%d")
+        end_date   = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=max(30, lookback * 3))).strftime("%Y-%m-%d")
         df         = self._fetcher.fetch_stock_data(symbol, start_date, end_date)
 
@@ -108,6 +108,6 @@ class StockTradingService:
 
     # Fetch the last `days` of OHLCV data for symbol from the configured fetcher.
     def fetch_data(self, symbol: str, days: int = 180) -> pd.DataFrame:
-        end_date   = datetime.now().strftime("%Y-%m-%d")
+        end_date   = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         return self._fetcher.fetch_stock_data(symbol, start_date, end_date)

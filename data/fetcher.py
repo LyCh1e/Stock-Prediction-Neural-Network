@@ -38,7 +38,7 @@ class YahooFinanceFetcher(IDataFetcher):
         end_date: Optional[str] = None,
     ) -> pd.DataFrame:
         if end_date is None:
-            end_date   = datetime.now().strftime("%Y-%m-%d")
+            end_date   = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         if start_date is None:
             start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
 
@@ -75,7 +75,7 @@ class YahooFinanceFetcher(IDataFetcher):
     # from RSI, MACD, moving averages, and volume.
     def get_market_sentiment(self, symbol: str) -> Dict:
         try:
-            end_date   = datetime.now().strftime("%Y-%m-%d")
+            end_date   = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
             df = self.fetch_stock_data(symbol, start_date, end_date)
             if len(df) < 5:
