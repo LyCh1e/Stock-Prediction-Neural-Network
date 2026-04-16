@@ -53,13 +53,14 @@ class StockPriceApp:
         # Stock Manager tab
         self._stock_tab = StockManagerTab(
             nb,
-            on_add          = self._add_stock,
-            on_remove       = self._remove_stocks,
-            on_predict_all  = self._predict_all,
-            on_update_all   = self._update_all,
-            on_update_data  = self._update_data,
-            on_update_preds = self._update_preds,
-            on_view_score   = self._view_score,
+            on_add           = self._add_stock,
+            on_remove        = self._remove_stocks,
+            on_predict_all   = self._predict_all,
+            on_update_all    = self._update_all,
+            on_update_data   = self._update_data,
+            on_update_preds  = self._update_preds,
+            on_update_scores = self._update_scores,
+            on_view_score    = self._view_score,
         )
         nb.add(self._stock_tab, text="  Stock Manager  ")
 
@@ -108,6 +109,18 @@ class StockPriceApp:
         try:
             path = self.registry.update_stock_data()
             messagebox.showinfo("Updated", f"Stock data updated in:\n{path}")
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+
+    # Migrate legacy score rows from stock_predictions.xlsx, then force-write prediction_score.xlsx.
+    def _update_scores(self) -> None:
+        try:
+            migrated = self.registry.migrate_scores()
+            path = self.registry.update_scores()
+            msg = f"Scores updated in:\n{path}"
+            if migrated:
+                msg += f"\n\n({migrated} legacy row(s) migrated from stock_predictions.xlsx)"
+            messagebox.showinfo("Updated", msg)
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
 

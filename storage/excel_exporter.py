@@ -237,6 +237,116 @@ class ExcelExporter:
             self._create_empty_score_file()
         return self.export_scores(stocks)
 
+    # Read "── Daily Score ──" rows out of stock_predictions.xlsx, write them to prediction_score.xlsx,
+    # and strip them from stock_predictions.xlsx.  Safe to call multiple times (idempotent).
+    # All reads happen before any writes so neither file is ever left in a partial state.
+    def migrate_scores_from_predictions(self) -> int:
+        """Returns the total number of score rows migrated across all symbols."""
+        if not os.path.exists(self._pred_file):
+            return 0
+
+        # ── Phase 1: read everything into memory ──────────────────────── #
+        try:
+            pred_xl = pd.ExcelFile(self._pred_file, engine="openpyxl")
+        except Exception:
+            return 0
+
+        pred_sheets: Dict[str, pd.DataFrame] = {}
+        for sheet_name in pred_xl.sheet_names:
+            try:
+                pred_sheets[str(sheet_name)] = pred_xl.parse(sheet_name)
+            except Exception:
+                pass
+        pred_xl.close()
+
+        score_sheets: Dict[str, pd.DataFrame] = {}
+        if os.path.exists(self._score_file):
+            try:
+                score_xl = pd.ExcelFile(self._score_file, engine="openpyxl")
+                for sheet_name in score_xl.sheet_names:
+                    try:
+                        df = score_xl.parse(sheet_name)
+                        if not df.empty and "Prediction Date" in df.columns:
+                            score_sheets[str(sheet_name)] = df
+                    except Exception:
+                        pass
+                score_xl.close()
+            except Exception:
+                pass
+
+        # ── Phase 2: process score rows in memory ─────────────────────── #
+        total_migrated  = 0
+        cleaned_pred: Dict[str, pd.DataFrame] = {}
+        pred_file_dirty = False
+
+        for sheet_name, df in pred_sheets.items():
+            if "Scenario" not in df.columns:
+                cleaned_pred[sheet_name] = df
+                continue
+
+            score_mask = df["Scenario"] == "\u2500\u2500 Daily Score \u2500\u2500"
+            score_rows = df[score_mask]
+
+            if score_rows.empty:
+                cleaned_pred[sheet_name] = df
+                continue
+
+            new_rows: List[Dict] = []
+            for _, row in score_rows.iterrows():
+                pred_date = str(row.get("Exported At", ""))
+                close_str = str(row.get("Close", ""))
+                actual    = float(row.get("Current Price", 0) or 0)
+                signal    = str(row.get("Signal", ""))
+                in_range  = "\u2713" if "\u2713" in signal else "\u2717"
+
+                predicted = actual
+                if "\u2192" in close_str:
+                    try:
+                        predicted = float(close_str.split("\u2192")[0].replace("Pred", "").strip())
+                    except ValueError:
+                        pass
+
+                err_pct = abs(predicted - actual) / (abs(actual) + 1e-8) * 100
+                new_rows.append({
+                    "Prediction Date": pred_date,
+                    "Predicted Close": round(predicted, 2),
+                    "Best Case":       round(predicted, 2),
+                    "Worst Case":      round(predicted, 2),
+                    "Actual Close":    round(actual,    2),
+                    "Error %":         round(err_pct,   2),
+                    "In Range":        in_range,
+                    "Direction":       "N/A",
+                })
+
+            df_new = pd.DataFrame(new_rows)
+
+            if sheet_name in score_sheets:
+                df_merged = pd.concat([score_sheets[sheet_name], df_new], ignore_index=True)
+                df_merged = df_merged.drop_duplicates(subset=["Prediction Date"], keep="last")
+            else:
+                df_merged = df_new
+
+            score_sheets[sheet_name] = df_merged
+            total_migrated += len(new_rows)
+            cleaned_pred[sheet_name] = df[~score_mask].reset_index(drop=True)
+            pred_file_dirty = True
+
+        # ── Phase 3: write both files (no partial saves) ──────────────── #
+        with _LOCK:
+            if pred_file_dirty:
+                with pd.ExcelWriter(self._pred_file, engine="openpyxl") as writer:
+                    for sym, df_sym in cleaned_pred.items():
+                        df_sym.to_excel(writer, sheet_name=sym, index=False)
+
+            if score_sheets:
+                with pd.ExcelWriter(self._score_file, engine="openpyxl") as writer:
+                    for sym, df_sym in score_sheets.items():
+                        df_sym.to_excel(writer, sheet_name=sym, index=False)
+            elif not os.path.exists(self._score_file):
+                self._create_empty_score_file()
+
+        return total_migrated
+
     # Create an empty prediction_score.xlsx as a placeholder before any predictions are matched.
     def _create_empty_score_file(self) -> None:
         from openpyxl import Workbook

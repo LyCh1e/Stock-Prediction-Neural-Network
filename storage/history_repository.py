@@ -41,7 +41,7 @@ class CsvHistoryRepository(IHistoryRepository):
             })
 
         df_new = pd.DataFrame(rows)
-        df_new = df_new.sort_values("Date").tail(5)
+        df_new = df_new.sort_values("Date")
         tmp    = self._filepath + ".tmp"
 
         try:

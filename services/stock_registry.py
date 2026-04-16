@@ -143,9 +143,19 @@ class StockRegistry:
     def update_predictions(self) -> str:
         return self._exporter.update_predictions(self._stocks)
 
-    # Delegate scores Excel update to the exporter; return the file path.
+    # Delegate scores Excel update to the exporter, using the full merged prediction history
+    # (Excel + CSV + in-memory) so all historical comparisons are included, not just today's.
     def update_scores(self) -> str:
-        return self._exporter.update_scores(self._stocks)
+        stocks_full: Dict[str, StockEntry] = {}
+        for symbol, data in self._stocks.items():
+            augmented = dict(data)
+            augmented["pred_history"] = self.full_pred_history(symbol)
+            stocks_full[symbol] = augmented
+        return self._exporter.update_scores(stocks_full)
+
+    # Migrate legacy score rows from stock_predictions.xlsx into prediction_score.xlsx.
+    def migrate_scores(self) -> int:
+        return self._exporter.migrate_scores_from_predictions()
 
     # ------------------------------------------------------------------ #
     #  Background thread workers                                          #

@@ -18,22 +18,24 @@ class StockManagerTab(ttk.Frame):
     def __init__(
         self,
         parent,
-        on_add:          Callable,
-        on_remove:       Callable,
-        on_predict_all:  Callable,
-        on_update_all:   Callable,
-        on_update_data:  Callable,
-        on_update_preds: Callable,
-        on_view_score:   Callable,
+        on_add:           Callable,
+        on_remove:        Callable,
+        on_predict_all:   Callable,
+        on_update_all:    Callable,
+        on_update_data:   Callable,
+        on_update_preds:  Callable,
+        on_update_scores: Callable,
+        on_view_score:    Callable,
     ) -> None:
         super().__init__(parent)
-        self._on_add          = on_add
-        self._on_remove       = on_remove
-        self._on_predict_all  = on_predict_all
-        self._on_update_all   = on_update_all
-        self._on_update_data  = on_update_data
-        self._on_update_preds = on_update_preds
-        self._on_view_score   = on_view_score
+        self._on_add           = on_add
+        self._on_remove        = on_remove
+        self._on_predict_all   = on_predict_all
+        self._on_update_all    = on_update_all
+        self._on_update_data   = on_update_data
+        self._on_update_preds  = on_update_preds
+        self._on_update_scores = on_update_scores
+        self._on_view_score    = on_view_score
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
@@ -175,6 +177,7 @@ class StockManagerTab(ttk.Frame):
             ("Remove Selected",    self._remove_selected),
             ("Update Stock Data",  self._on_update_data),
             ("Update Predictions", self._on_update_preds),
+            ("Update Scores",      self._on_update_scores),
             ("View Score",         self._view_score),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
