@@ -9,9 +9,10 @@ from typing import Callable, Dict, Optional
 
 from core.interfaces import IHistoryRepository, IModelRepository, ISymbolRepository
 from ml.network import NeuralNetwork
+from scoring.calibration import apply_calibration, load_calibration
 from scoring.scorer import score_symbol
 from services.trading_service import StockTradingService
-from storage.excel_exporter import ExcelExporter
+from storage.excel_exporter import ExcelExporter, SCORES_FILE
 
 StockEntry = Dict
 
@@ -195,7 +196,7 @@ class StockRegistry:
             pred = self._service.predict(
                 symbol, raw_df, network, data["scaler_params"], lookback_window=lookback
             )
-            data["prediction"] = pred
+            data["prediction"] = self._calibrate_prediction(symbol, pred)
             data["status"]     = "Ready"
 
             self._save_model(symbol)
@@ -229,7 +230,7 @@ class StockRegistry:
                 symbol, raw_df, data["network"], data["scaler_params"], lookback_window=lookback
             )
 
-            data["prediction"] = pred
+            data["prediction"] = self._calibrate_prediction(symbol, pred)
             data["status"]     = "Ready"
 
             self._save_model(symbol)
@@ -261,7 +262,7 @@ class StockRegistry:
                 symbol, raw_df, data["network"], data["scaler_params"], lookback_window=lookback
             )
 
-            data["prediction"] = pred
+            data["prediction"] = self._calibrate_prediction(symbol, pred)
             data["status"]     = "Ready"
 
             self._save_model(symbol)
@@ -277,6 +278,21 @@ class StockRegistry:
     # ------------------------------------------------------------------ #
     #  Private helpers                                                    #
     # ------------------------------------------------------------------ #
+
+    # Load error stats from prediction_score.xlsx and apply band calibration to pred.
+    # Returns pred unchanged if there is insufficient history (< 5 matched predictions).
+    def _calibrate_prediction(self, symbol: str, pred: Dict) -> Dict:
+        calibration = load_calibration(symbol, SCORES_FILE)
+        if calibration is None:
+            return pred
+        try:
+            calibrated = apply_calibration(pred, calibration)
+            self._cb("log", f"{symbol}: bands calibrated from {calibration['n']} historical predictions "
+                            f"(in-range rate {calibration['in_range_rate']*100:.0f}%)")
+            return calibrated
+        except Exception as exc:
+            self._cb("log", f"{symbol}: calibration skipped — {exc}")
+            return pred
 
     # Return a blank StockEntry dict with default fields for a newly added symbol.
     @staticmethod
