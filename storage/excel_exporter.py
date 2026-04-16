@@ -221,14 +221,26 @@ class ExcelExporter:
     #  Scores (prediction_score.xlsx)                                     #
     # ------------------------------------------------------------------ #
 
+    _SCORE_COLUMNS = [
+        "Prediction Date", "Predicted Close", "Best Case", "Worst Case",
+        "Actual Close", "Error %", "In Range", "Direction Correct",
+    ]
+
     # Write per-symbol daily score sheets to prediction_score.xlsx, overwriting the file.
+    # If no symbol has matched data yet, writes an empty placeholder sheet so the file is valid.
     def export_scores(self, stocks: Dict) -> str:
         with _LOCK:
             with pd.ExcelWriter(self._score_file, engine="openpyxl") as writer:
+                written = False
                 for symbol, data in stocks.items():
                     df_score = self._score_df_for_export(symbol, data)
                     if df_score is not None:
                         df_score.to_excel(writer, sheet_name=symbol, index=False)
+                        written = True
+                if not written:
+                    pd.DataFrame(columns=self._SCORE_COLUMNS).to_excel(
+                        writer, sheet_name="Score Data", index=False
+                    )
         return os.path.abspath(self._score_file)
 
     # Create prediction_score.xlsx if it doesn't exist yet, then overwrite with the latest score data.
@@ -380,17 +392,17 @@ class ExcelExporter:
             prev      = _prev_close(r.date, df)
             direction = "N/A"
             if prev is not None:
-                direction = "✓" if (avg >= prev) == (actual >= prev) else "✗"
+                direction = "Yes" if (avg >= prev) == (actual >= prev) else "No"
             pred_date = r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date)
             rows.append({
-                "Prediction Date": pred_date,
-                "Predicted Close": round(avg,    2),
-                "Best Case":       round(best,   2),
-                "Worst Case":      round(worst,  2),
-                "Actual Close":    round(actual, 2),
-                "Error %":         round(err_pct, 2),
-                "In Range":        "✓" if in_range else "✗",
-                "Direction":       direction,
+                "Prediction Date":  pred_date,
+                "Predicted Close":  round(avg,    2),
+                "Best Case":        round(best,   2),
+                "Worst Case":       round(worst,  2),
+                "Actual Close":     round(actual, 2),
+                "Error %":          round(err_pct, 2),
+                "In Range":         "Yes" if in_range else "No",
+                "Direction Correct": direction,
             })
 
         return pd.DataFrame(rows)
