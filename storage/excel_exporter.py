@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from scoring.scorer import _parse_records, _match_actuals, _prev_close
+from scoring.scorer import _parse_records, _prev_close
 
 _LOCK = threading.Lock()
 
@@ -367,42 +367,69 @@ class ExcelExporter:
             wb.active.title = "Score Data"  # type: ignore[union-attr]
             wb.save(self._score_file)
 
-    # Build a per-symbol DataFrame of matched predictions vs actuals for the scores file.
+    # Build a per-symbol DataFrame of all predictions vs actuals for the scores file.
+    # Uses same-day close matching and includes unmatched rows, mirroring the score viewer exactly.
     @staticmethod
     def _score_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         ph = data.get("pred_history", [])
         df = data.get("raw_df")
-        if not ph or df is None:
+        if not ph:
             return None
 
         records = _parse_records(ph)
-        records = _match_actuals(records, df)
-        matched = [r for r in records if r.actual is not None]
-        if not matched:
+        if not records:
             return None
 
-        rows: List[Dict] = []
-        for r in matched:
-            avg    = float(r.avg)
-            best   = float(r.best)
-            worst  = float(r.worst)
-            actual = float(r.actual)  # type: ignore[arg-type]
-            err_pct  = abs(avg - actual) / (abs(actual) + 1e-8) * 100
-            in_range = min(best, worst) <= actual <= max(best, worst)
-            prev      = _prev_close(r.date, df)
-            direction = "N/A"
-            if prev is not None:
-                direction = "Yes" if (avg >= prev) == (actual >= prev) else "No"
-            pred_date = r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date)
-            rows.append({
-                "Prediction Date":  pred_date,
-                "Predicted Close":  round(avg,    2),
-                "Best Case":        round(best,   2),
-                "Worst Case":       round(worst,  2),
-                "Actual Close":     round(actual, 2),
-                "Error %":          round(err_pct, 2),
-                "In Range":         "Yes" if in_range else "No",
-                "Direction Correct": direction,
-            })
+        # Same-day close lookup — identical to the score viewer in app.py
+        close_by_date: dict = {}
+        if df is not None and not df.empty:
+            idx = pd.DatetimeIndex(df.index)
+            if hasattr(idx, "tz") and idx.tz is not None:
+                idx = idx.tz_localize(None)
+            close_by_date = dict(zip(idx.normalize(), df["close"].values))
 
-        return pd.DataFrame(rows)
+        today = pd.Timestamp(datetime.now().date())
+        for r in records:
+            ts = pd.Timestamp(r.date).normalize()
+            if ts in close_by_date and ts < today:
+                r.actual = float(close_by_date[ts])
+
+        rows: List[Dict] = []
+        for r in records:
+            pred_date = r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date)
+            avg   = float(r.avg)
+            best  = float(r.best)
+            worst = float(r.worst)
+
+            if r.actual is not None:
+                actual    = float(r.actual)
+                err_pct   = abs(avg - actual) / (abs(actual) + 1e-8) * 100
+                in_range  = min(best, worst) <= actual <= max(best, worst)
+                prev      = _prev_close(r.date, df) if df is not None else None
+                direction = "N/A"
+                if prev is not None:
+                    direction = "Yes" if (avg >= prev) == (actual >= prev) else "No"
+                rows.append({
+                    "Prediction Date":   pred_date,
+                    "Predicted Close":   round(avg,    2),
+                    "Best Case":         round(best,   2),
+                    "Worst Case":        round(worst,  2),
+                    "Actual Close":      round(actual, 2),
+                    "Error %":           round(err_pct, 2),
+                    "In Range":          "Yes" if in_range else "No",
+                    "Direction Correct": direction,
+                })
+            else:
+                actual_label = "Not Available" if r.date.weekday() >= 5 else "Pending"
+                rows.append({
+                    "Prediction Date":   pred_date,
+                    "Predicted Close":   round(avg,   2),
+                    "Best Case":         round(best,  2),
+                    "Worst Case":        round(worst, 2),
+                    "Actual Close":      actual_label,
+                    "Error %":           "—",
+                    "In Range":          "—",
+                    "Direction Correct": "—",
+                })
+
+        return pd.DataFrame(rows) if rows else None

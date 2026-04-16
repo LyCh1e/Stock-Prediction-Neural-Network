@@ -24,27 +24,32 @@ def load_calibration(symbol: str, score_file: str) -> Optional[Dict]:
     except Exception:
         return None
 
-    if len(df) < 5 or not {"Predicted Close", "Actual Close"}.issubset(df.columns):
+    if not {"Predicted Close", "Actual Close"}.issubset(df.columns):
         return None
 
-    predicted = df["Predicted Close"].astype(float)
-    actual    = df["Actual Close"].astype(float)
+    # Only rows with actual close data (exclude "Pending" / "Not Available" rows)
+    matched = df[pd.to_numeric(df["Actual Close"], errors="coerce").notna()].copy()
+    if len(matched) < 5:
+        return None
+
+    predicted = matched["Predicted Close"].astype(float)
+    actual    = matched["Actual Close"].astype(float)
 
     # Relative residuals: positive = actual was higher than predicted
     residuals = (actual - predicted) / (predicted.abs() + 1e-8)
 
     in_range_rate = (
-        float((df["In Range"] == "Yes").mean())
-        if "In Range" in df.columns
+        float((matched["In Range"] == "Yes").mean())
+        if "In Range" in matched.columns
         else 0.5
     )
 
     return {
-        "p10":          float(np.percentile(residuals, 10)),
-        "p90":          float(np.percentile(residuals, 90)),
-        "mean_error":   float(residuals.mean()),
-        "mae_pct":      float(residuals.abs().mean() * 100),
-        "n":            len(df),
+        "p10":           float(np.percentile(residuals, 10)),
+        "p90":           float(np.percentile(residuals, 90)),
+        "mean_error":    float(residuals.mean()),
+        "mae_pct":       float(residuals.abs().mean() * 100),
+        "n":             len(matched),
         "in_range_rate": in_range_rate,
     }
 

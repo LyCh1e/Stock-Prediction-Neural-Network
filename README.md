@@ -12,12 +12,13 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Market Sentiment Analysis**: Bullish/bearish scoring across multiple indicator signals
 - **Model Persistence (JSON + CSV)**: Network weights, scaler params, and prediction history saved to `stock_models.json` / `stock_models_history.csv` after every train, predict, and update — model resumes from where it left off on next startup
 - **Accuracy Scoring**: Composite 0–100 score with letter grades (A+ → F) measuring price error, directional accuracy, and within-range hits
+- **Band Calibration**: Best/worst case bands are automatically widened using historical residuals from `prediction_score.xlsx` when ≥5 matched predictions are available, targeting a 75% in-range rate
 - **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
 - **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
 - **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
 - **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
 - **Live Current Price**: Current Price column reflects the latest traded price (intraday during market hours, official close after market close) — not a stale end-of-previous-day value
-- **Excel Export**: OHLCV history → `stock_data.xlsx`, prediction scenarios + daily scores → `stock_predictions.xlsx`
+- **Excel Export**: OHLCV history → `stock_data.xlsx`; prediction scenarios → `stock_predictions.xlsx`; full prediction score breakdown → `prediction_score.xlsx`
 
 ## Quick Start
 
@@ -63,6 +64,7 @@ ml/
 
 scoring/
   scorer.py         — score_symbol() — composite 0–100 accuracy score function
+  calibration.py    — load_calibration() / apply_calibration() — band widening from historical residuals
 
 services/
   trading_service.py — StockTradingService (data + ML orchestration)
@@ -147,14 +149,15 @@ _predict_thread / _update_thread
 | File | Contents |
 |------|---------|
 | `stock_data.xlsx` | One sheet per symbol — append-only OHLCV history |
-| `stock_predictions.xlsx` | One sheet per symbol — scenario rows (Best/Average/Worst) + daily score rows (predicted vs actual close, in-range signal) |
+| `stock_predictions.xlsx` | One sheet per symbol — scenario rows (Best Case / Average Case / Worst Case) |
+| `prediction_score.xlsx` | One sheet per symbol — every archived prediction with Predicted Close, Best Case, Worst Case, Actual Close, Error %, In Range, and Direction Correct; unmatched rows show "Pending" or "Not Available" |
 
 ### Persistence File Layout
 
 | File | Contents |
 |------|---------|
 | `stock_models.json` | Network weights and scaler params per symbol |
-| `stock_models_history.csv` | Prediction log (Symbol, Date, Avg, Best, Worst) — capped at 5 most recent entries per symbol |
+| `stock_models_history.csv` | Prediction log (Symbol, Date, Avg, Best, Worst) — up to 5 most recent entries per symbol |
 | `tracked_symbols.json` | Tracked symbols with lookback and epoch settings |
 
 ### Market Status Indicator
@@ -194,7 +197,8 @@ Updates every 60 seconds automatically.
 | Remove Selected | Remove selected stock(s) from the tracker |
 | Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
-| View Score | Show accuracy score and all archived predictions for the selected stock — today's Actual Close shows "Pending" until the next trading day |
+| Update Scores | Write the full prediction score breakdown to `prediction_score.xlsx` — all archived predictions, with Actual Close filled in where available and "Pending" / "Not Available" for future or weekend dates |
+| View Score | Show accuracy score and all archived predictions for the selected stock in a popup window — matches `prediction_score.xlsx` one-to-one |
 | Refresh Charts | Redraw all chart tabs with latest data (Charts tab) |
 
 ### Scenario Generation
@@ -229,6 +233,7 @@ Three scenarios are derived from the base prediction by applying volatility mult
 | `ml/trainer.py` | Training loop with warm-up + step-decay LR |
 | `ml/predictor.py` | Prediction and scenario generation |
 | `scoring/scorer.py` | `score_symbol()` — composite accuracy scoring |
+| `scoring/calibration.py` | `load_calibration()` / `apply_calibration()` — band calibration from historical residuals |
 | `services/trading_service.py` | Data + ML orchestration |
 | `services/stock_registry.py` | In-memory stock registry + background workers |
 | `storage/model_repository.py` | JSON model weight persistence |
@@ -243,7 +248,8 @@ Three scenarios are derived from the base prediction by applying volatility mult
 | `stock_models.json` | Auto-generated: saved network weights + scaler params |
 | `stock_models_history.csv` | Auto-generated: prediction history log (5 most recent per symbol) |
 | `stock_data.xlsx` | Auto-generated: OHLCV history |
-| `stock_predictions.xlsx` | Auto-generated: prediction scenarios + daily actual-vs-predicted rows |
+| `stock_predictions.xlsx` | Auto-generated: prediction scenarios (Best / Average / Worst Case) |
+| `prediction_score.xlsx` | Auto-generated: full prediction score breakdown — all rows, matched and unmatched |
 
 ## Technical Indicators
 
