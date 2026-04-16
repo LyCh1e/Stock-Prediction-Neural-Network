@@ -143,6 +143,10 @@ class StockRegistry:
     def update_predictions(self) -> str:
         return self._exporter.update_predictions(self._stocks)
 
+    # Delegate scores Excel update to the exporter; return the file path.
+    def update_scores(self) -> str:
+        return self._exporter.update_scores(self._stocks)
+
     # ------------------------------------------------------------------ #
     #  Background thread workers                                          #
     # ------------------------------------------------------------------ #

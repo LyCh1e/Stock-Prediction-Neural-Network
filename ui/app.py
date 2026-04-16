@@ -295,10 +295,11 @@ class StockPriceApp:
         self._running = False
         self.root.quit()
 
-    # Launch the background auto-update and auto-predict daemon threads.
+    # Launch the background auto-update, auto-predict, and auto-export daemon threads.
     def _start_auto_threads(self) -> None:
         threading.Thread(target=self._auto_update_loop,  daemon=True).start()
         threading.Thread(target=self._auto_predict_loop, daemon=True).start()
+        threading.Thread(target=self._auto_export_loop,  daemon=True).start()
 
     # Round-robin adaptive updates across all symbols at ~1000 calls/hour.
     def _auto_update_loop(self) -> None:
@@ -321,6 +322,30 @@ class StockPriceApp:
                 break
             for sym in self.registry.symbols():
                 self.registry.predict(sym)
+
+    # Auto-save stock_predictions.xlsx and prediction_score.xlsx every 20 minutes.
+    # Also ensures prediction_score.xlsx exists on startup before the first interval fires.
+    def _auto_export_loop(self) -> None:
+        # Check for prediction_score.xlsx on startup; create it if missing.
+        try:
+            self.registry.update_scores()
+        except Exception as exc:
+            self._queue.put(("log", f"Score file init error: {exc}"))
+
+        while self._running:
+            time.sleep(1200)
+            if not self._running:
+                break
+            if not self.registry.symbols():
+                continue
+            try:
+                self.registry.update_predictions()
+            except Exception as exc:
+                self._queue.put(("log", f"Auto-export predictions error: {exc}"))
+            try:
+                self.registry.update_scores()
+            except Exception as exc:
+                self._queue.put(("log", f"Auto-export scores error: {exc}"))
 
     # ------------------------------------------------------------------ #
     #  Message queue bridge (background → Tk main thread)                #
@@ -385,7 +410,6 @@ class StockPriceApp:
 # Factory: wire all concrete dependencies and return a ready-to-run StockPriceApp.
 def create_app(root: tk.Tk) -> StockPriceApp:
     from data.fetcher import YahooFinanceFetcher
-    from ml.network import NeuralNetwork
     from ml.predictor import StockPredictor
     from ml.trainer import ModelTrainer
     from services.trading_service import StockTradingService

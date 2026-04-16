@@ -1,4 +1,4 @@
-# Excel I/O for OHLCV data and predictions — no ML, no registry logic.
+# Excel I/O for OHLCV data, predictions, and daily scores — no ML, no registry logic.
 
 from __future__ import annotations
 
@@ -9,24 +9,27 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from scoring.scorer import _parse_records, _match_actuals
+from scoring.scorer import _parse_records, _match_actuals, _prev_close
 
 _LOCK = threading.Lock()
 
 STOCK_DATA_FILE  = "stock_data.xlsx"
 PREDICTIONS_FILE = "stock_predictions.xlsx"
+SCORES_FILE      = "prediction_score.xlsx"
 
 
-# Exports OHLCV history and prediction scenarios to Excel files.
+# Exports OHLCV history, prediction scenarios, and daily scores to Excel files.
 class ExcelExporter:
 
     def __init__(
         self,
         stock_data_file: str = STOCK_DATA_FILE,
         predictions_file: str = PREDICTIONS_FILE,
+        scores_file: str = SCORES_FILE,
     ) -> None:
-        self._data_file = stock_data_file
-        self._pred_file = predictions_file
+        self._data_file  = stock_data_file
+        self._pred_file  = predictions_file
+        self._score_file = scores_file
 
     # ------------------------------------------------------------------ #
     #  OHLCV data                                                         #
@@ -184,7 +187,7 @@ class ExcelExporter:
 
         return records
 
-    # Build the predictions DataFrame (scenario rows + daily score rows) ready for Excel export.
+    # Build the predictions DataFrame (scenario rows only) ready for Excel export.
     @staticmethod
     def _pred_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         pred = data.get("prediction")
@@ -212,47 +215,72 @@ class ExcelExporter:
                 "Signal":         pred.get("recommendation", "").replace("_", " "),
             })
 
-        score_rows = ExcelExporter._build_daily_score_rows(symbol, data)
-        df_pred    = pd.DataFrame(rows)
-        if score_rows:
-            df_pred = pd.concat([df_pred, pd.DataFrame(score_rows)], ignore_index=True)
-        return df_pred
+        return pd.DataFrame(rows)
 
-    # Build per-prediction score rows (pred vs actual, in-range flag) for the Excel predictions sheet.
+    # ------------------------------------------------------------------ #
+    #  Scores (prediction_score.xlsx)                                     #
+    # ------------------------------------------------------------------ #
+
+    # Write per-symbol daily score sheets to prediction_score.xlsx, overwriting the file.
+    def export_scores(self, stocks: Dict) -> str:
+        with _LOCK:
+            with pd.ExcelWriter(self._score_file, engine="openpyxl") as writer:
+                for symbol, data in stocks.items():
+                    df_score = self._score_df_for_export(symbol, data)
+                    if df_score is not None:
+                        df_score.to_excel(writer, sheet_name=symbol, index=False)
+        return os.path.abspath(self._score_file)
+
+    # Create prediction_score.xlsx if it doesn't exist yet, then overwrite with the latest score data.
+    def update_scores(self, stocks: Dict) -> str:
+        if not os.path.exists(self._score_file):
+            self._create_empty_score_file()
+        return self.export_scores(stocks)
+
+    # Create an empty prediction_score.xlsx as a placeholder before any predictions are matched.
+    def _create_empty_score_file(self) -> None:
+        from openpyxl import Workbook
+        with _LOCK:
+            wb = Workbook()
+            wb.active.title = "Score Data"  # type: ignore[union-attr]
+            wb.save(self._score_file)
+
+    # Build a per-symbol DataFrame of matched predictions vs actuals for the scores file.
     @staticmethod
-    def _build_daily_score_rows(symbol: str, data: Dict) -> List[Dict]:
+    def _score_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         ph = data.get("pred_history", [])
         df = data.get("raw_df")
         if not ph or df is None:
-            return []
+            return None
 
         records = _parse_records(ph)
         records = _match_actuals(records, df)
         matched = [r for r in records if r.actual is not None]
         if not matched:
-            return []
+            return None
 
         rows: List[Dict] = []
-
         for r in matched:
-            if r.avg is None or r.actual is None:
-                continue
-            in_range = (
-                r.best is not None and r.worst is not None and r.actual is not None
-                and min(r.best, r.worst) <= r.actual <= max(r.best, r.worst)
-            )
-
-            pred_date = (r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date))
-
+            avg    = float(r.avg)
+            best   = float(r.best)
+            worst  = float(r.worst)
+            actual = float(r.actual)  # type: ignore[arg-type]
+            err_pct  = abs(avg - actual) / (abs(actual) + 1e-8) * 100
+            in_range = min(best, worst) <= actual <= max(best, worst)
+            prev      = _prev_close(r.date, df)
+            direction = "N/A"
+            if prev is not None:
+                direction = "✓" if (avg >= prev) == (actual >= prev) else "✗"
+            pred_date = r.date.strftime("%Y-%m-%d %H:%M") if hasattr(r.date, "strftime") else str(r.date)
             rows.append({
-                "Exported At":    pred_date,
-                "Scenario":       "── Daily Score ──",
-                "Open":  "", "High": "", "Low": "",
-                "Close":          f"Pred {round(r.avg or 0, 2)}  →  Actual {round(r.actual or 0, 2)}",
-                "Profit %":       round((r.actual - r.avg) / (abs(r.avg) + 1e-8) * 100, 2) if r.actual and r.avg else 0,
-                "Current Price":  round(r.actual or 0, 2),
-                "Confidence":     "",
-                "Signal":         "✓ In range" if in_range else "✗ Outside",
+                "Prediction Date": pred_date,
+                "Predicted Close": round(avg,    2),
+                "Best Case":       round(best,   2),
+                "Worst Case":      round(worst,  2),
+                "Actual Close":    round(actual, 2),
+                "Error %":         round(err_pct, 2),
+                "In Range":        "✓" if in_range else "✗",
+                "Direction":       direction,
             })
 
-        return rows
+        return pd.DataFrame(rows)
