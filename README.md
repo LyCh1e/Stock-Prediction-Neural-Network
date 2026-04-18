@@ -13,9 +13,11 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Model Persistence (JSON + CSV)**: Network weights, scaler params, and prediction history saved to `stock_models.json` / `stock_models_history.csv` after every train, predict, and update — model resumes from where it left off on next startup
 - **Accuracy Scoring**: Composite 0–100 score with letter grades (A+ → F) measuring price error, directional accuracy, and within-range hits
 - **Band Calibration**: Best/worst case bands are automatically widened using historical residuals from `prediction_score.xlsx` when ≥5 matched predictions are available, targeting a 75% in-range rate
-- **Complete GUI**: Two-tab interface — Stock Manager and per-symbol Charts
+- **Complete GUI**: Multi-tab interface — Stock Manager, Edit Model, and on-demand chart popups
 - **Market Status Indicator**: Live color-coded label showing Pre-Market, Open, After-Hours, or Closed (US Eastern time)
-- **Interactive Charts**: Actual price history with future forecast band (best/worst/avg); zoom / pan / save toolbar
+- **Interactive Charts**: Per-stock popup window with actual price history and forecast band (best/worst/avg); zoom / pan / save toolbar; auto-refreshes when a new prediction arrives
+- **Stock Filter**: Search bar in both the Stock Manager and Edit Model tabs to quickly filter tracked symbols by name
+- **Edit Model Tab**: Adjust lookback and epoch settings per stock without restarting; changes apply on the next training run
 - **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
 - **Live Current Price**: Current Price column reflects the latest traded price (intraday during market hours, official close after market close) — not a stale end-of-previous-day value
 - **Excel Export**: OHLCV history → `stock_data.xlsx`; prediction scenarios → `stock_predictions.xlsx`; full prediction score breakdown → `prediction_score.xlsx`
@@ -77,9 +79,10 @@ storage/
   excel_exporter.py     — ExcelExporter (OHLCV + prediction xlsx files)
 
 ui/
-  app.py        — StockPriceApp (root window, tab composition, message-queue bridge)
-  stock_tab.py  — StockManagerTab (symbol table, buttons, activity log)
-  chart_tab.py  — ChartsTab (per-symbol interactive price + forecast charts)
+  app.py           — StockPriceApp (root window, tab composition, message-queue bridge)
+  stock_tab.py     — StockManagerTab (symbol table, filter, buttons, activity log)
+  chart_tab.py     — StockChartWindow (on-demand popup chart per symbol)
+  edit_model_tab.py — EditModelTab (per-stock lookback/epoch editor with filter)
 
 launch.py       — Dependency checker and entry point
 ```
@@ -181,10 +184,11 @@ Updates every 60 seconds automatically.
 1. python launch.py
 2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
 3. Watch training progress in the Log
-4. Switch to the Charts tab to see the price history and forecast
+4. Select a stock and click "Show Chart" to open its price history and forecast popup
 5. Click "Predict All" to refresh forecasts
 6. Click "Update All" for adaptive incremental learning
 7. Click "Update Stock Data" or "Update Predictions" to write xlsx files
+8. Switch to "Edit Model" to adjust lookback/epoch settings per stock
 ```
 
 ### GUI Button Reference
@@ -199,7 +203,7 @@ Updates every 60 seconds automatically.
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
 | Update Scores | Write the full prediction score breakdown to `prediction_score.xlsx` — all archived predictions, with Actual Close filled in where available and "Pending" / "Not Available" for future or weekend dates |
 | View Score | Show accuracy score and all archived predictions for the selected stock in a popup window — matches `prediction_score.xlsx` one-to-one |
-| Refresh Charts | Redraw all chart tabs with latest data (Charts tab) |
+| Show Chart | Open a chart popup for the selected stock showing price history and forecast; brings existing window to front if already open |
 
 ### Scenario Generation
 
@@ -241,8 +245,9 @@ Three scenarios are derived from the base prediction by applying volatility mult
 | `storage/symbol_repository.py` | JSON tracked-symbol persistence |
 | `storage/excel_exporter.py` | OHLCV + prediction Excel export |
 | `ui/app.py` | Root window, tab wiring, message-queue bridge |
-| `ui/stock_tab.py` | Stock Manager tab |
-| `ui/chart_tab.py` | Charts tab |
+| `ui/stock_tab.py` | Stock Manager tab (symbol table, filter, buttons, log) |
+| `ui/chart_tab.py` | Per-stock chart popup window |
+| `ui/edit_model_tab.py` | Edit Model tab (lookback/epoch editor with filter) |
 | `requirements.txt` | Python package dependencies |
 | `tracked_symbols.json` | Auto-generated: saved symbols and their settings |
 | `stock_models.json` | Auto-generated: saved network weights + scaler params |
