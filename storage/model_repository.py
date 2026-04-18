@@ -75,10 +75,6 @@ class JsonModelRepository(IModelRepository):
 
         saved_input_size = entry.get("input_size", -1)
         if saved_input_size != model.input_size:
-            print(
-                f"{symbol}: saved input_size={saved_input_size} != "
-                f"current input_size={model.input_size} — retraining from scratch"
-            )
             return None
 
         model.W1 = np.array(entry["W1"])

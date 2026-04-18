@@ -46,24 +46,8 @@ class StockTradingService:
         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
         df         = self._fetcher.fetch_stock_data(symbol, start_date, end_date)
 
-        print(f"Retrieved {len(df)} days of data for {symbol}")
-
         X, y, scaler_params = self._trainer.prepare_data(df, lookback)
-        print(f"Training on {len(X)} sequences with {X.shape[1]} features")
-
         self._trainer.train(network, X, y, epochs=epochs)
-
-        predictions_norm = network.predict(X)
-        predictions      = self._trainer.denormalize(predictions_norm, scaler_params)
-        y_actual         = self._trainer.denormalize(y, scaler_params)
-
-        mae_close  = float(abs(predictions[:, 3] - y_actual[:, 3]).mean())
-        mape_close = float(abs((predictions[:, 3] - y_actual[:, 3]) / (y_actual[:, 3] + 1e-8)).mean() * 100)
-
-        print(f"Training results for {symbol}:")
-        print(f"  Close Price MAE:  ${mae_close:.2f}")
-        print(f"  Close Price MAPE: {mape_close:.2f}%")
-        print(f"  Final Loss:       {network.losses[-1]:.6f}")
 
         return len(df), df, scaler_params
 

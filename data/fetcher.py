@@ -42,8 +42,6 @@ class YahooFinanceFetcher(IDataFetcher):
         if start_date is None:
             start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
 
-        print(f"Fetching Yahoo Finance data for {symbol} from {start_date} to {end_date}...")
-
         try:
             ticker = self._yf.Ticker(symbol)
             df_raw = ticker.history(start=start_date, end=end_date)
@@ -62,12 +60,9 @@ class YahooFinanceFetcher(IDataFetcher):
             df.index.name = "date"
             df = df.sort_index()
 
-            print(f"Successfully fetched {len(df)} days of data for {symbol}")
             return TechnicalIndicators.calculate(df, min_window=5)
 
-        except Exception as exc:
-            print(f"Error fetching data for {symbol}: {exc}")
-            print(f"Generating synthetic data for {symbol}")
+        except Exception:
             df = self._generate_synthetic_data(symbol, start_date, end_date)
             return TechnicalIndicators.calculate(df, min_window=5)
 
@@ -129,8 +124,7 @@ class YahooFinanceFetcher(IDataFetcher):
                     "price_vs_sma50": "Above" if current_close > sma_50 else "Below",
                 },
             }
-        except Exception as exc:
-            print(f"Error calculating sentiment for {symbol}: {exc}")
+        except Exception:
             return self._default_sentiment()
 
     # Combine predicted profit, confidence, sentiment, and risk/reward into a

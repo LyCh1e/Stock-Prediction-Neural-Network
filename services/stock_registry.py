@@ -71,6 +71,16 @@ class StockRegistry:
         threading.Thread(target=self._train_thread, args=(symbol,), daemon=True).start()
         return True
 
+    # Update lookback and/or epochs for an existing symbol and persist; returns False if not found.
+    def update_settings(self, symbol: str, lookback: int, epochs: int) -> bool:
+        symbol = symbol.upper()
+        if symbol not in self._stocks:
+            return False
+        self._stocks[symbol]["lookback"] = max(3, lookback)
+        self._stocks[symbol]["epochs"]   = max(10, epochs)
+        self._save_symbols()
+        return True
+
     # Remove symbol from the registry and persist the change; returns False if not found.
     def remove(self, symbol: str) -> bool:
         symbol = symbol.upper()

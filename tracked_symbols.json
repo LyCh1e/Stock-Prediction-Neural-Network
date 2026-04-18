@@ -1,7 +1,7 @@
 {
   "SPY": {
-    "lookback": 10,
-    "epochs": 200
+    "lookback": 20,
+    "epochs": 300
   },
   "AAPL": {
     "lookback": 10,

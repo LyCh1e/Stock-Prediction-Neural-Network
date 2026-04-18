@@ -12,7 +12,8 @@ from datetime import datetime
 from tkinter import messagebox, ttk
 
 from services.stock_registry import StockRegistry
-from ui.chart_tab import ChartsTab
+from ui.chart_tab import StockChartWindow
+from ui.edit_model_tab import EditModelTab
 from ui.stock_tab import StockManagerTab
 
 
@@ -26,9 +27,10 @@ class StockPriceApp:
         self.root.title("Stock Price Predictor — Yahoo Finance")
         self.root.geometry("1100x750")
 
-        self._queue:        queue.Queue          = queue.Queue()
-        self._running:      bool                 = True
-        self._score_window: tk.Toplevel | None   = None
+        self._queue:         queue.Queue          = queue.Queue()
+        self._running:       bool                 = True
+        self._score_window:  tk.Toplevel | None   = None
+        self._chart_windows: dict                 = {}
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -61,13 +63,14 @@ class StockPriceApp:
             on_update_preds  = self._update_preds,
             on_update_scores = self._update_scores,
             on_view_score    = self._view_score,
+            on_show_chart    = self._show_chart,
         )
         nb.add(self._stock_tab, text="  Stock Manager  ")
 
-        # Charts tab
-        self._chart_tab = ChartsTab(nb)
-        self._chart_tab.set_store(self.registry)
-        nb.add(self._chart_tab, text="  Charts  ")
+        # Edit Model tab
+        self._edit_tab = EditModelTab(nb, on_save=self._save_model_settings)
+        nb.add(self._edit_tab, text="  Edit Model  ")
+        nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
     # ------------------------------------------------------------------ #
     #  Stock actions                                                      #
@@ -80,16 +83,50 @@ class StockPriceApp:
             return
         self.registry.add(symbol, lookback, epochs)
         self._stock_tab.update_row(symbol, self.registry.get(symbol) or {})
-        self._chart_tab.ensure_tab(symbol)
         self._stock_tab.log(f"Queued training for {symbol}")
 
-    # Remove each symbol from the table, registry, and chart tabs.
+    # Remove each symbol from the table and registry; close its chart window if open.
     def _remove_stocks(self, symbols: list) -> None:
         for sym in symbols:
             self._stock_tab.remove_row(sym)
             self.registry.remove(sym)
-            self._chart_tab.remove_tab(sym)
+            win = self._chart_windows.pop(sym, None)
+            if win is not None and win.winfo_exists():
+                win.destroy()
             self._stock_tab.log(f"Removed {sym}")
+
+    # Open a chart popup for symbol; bring it to front if already open.
+    def _show_chart(self, symbol: str) -> None:
+        data = self.registry.get(symbol)
+        if not data:
+            return
+        win = self._chart_windows.get(symbol)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return
+        win = StockChartWindow(self.root, symbol, data)
+        win.protocol("WM_DELETE_WINDOW", lambda: self._close_chart(symbol))
+        self._chart_windows[symbol] = win
+
+    # Populate the Edit Model table whenever that tab is selected.
+    def _on_tab_changed(self, _) -> None:
+        nb = self.root.nametowidget(self._edit_tab.winfo_parent())
+        if nb.select() == str(self._edit_tab):
+            stocks = [
+                (sym, d["lookback"], d["epochs"])
+                for sym, d in self.registry.stocks.items()
+            ]
+            self._edit_tab.load(stocks)
+
+    # Persist updated lookback/epoch for a symbol via the registry.
+    def _save_model_settings(self, symbol: str, lookback: int, epochs: int) -> None:
+        self.registry.update_settings(symbol, lookback, epochs)
+
+    def _close_chart(self, symbol: str) -> None:
+        win = self._chart_windows.pop(symbol, None)
+        if win is not None and win.winfo_exists():
+            win.destroy()
 
     # Trigger a background prediction for every tracked symbol.
     def _predict_all(self) -> None:
@@ -382,9 +419,12 @@ class StockPriceApp:
                     data = self.registry.get(payload)
                     if data:
                         self._stock_tab.update_row(payload, data)
-                        self._chart_tab.ensure_tab(payload)
                 elif msg_type == "chart":
-                    self._chart_tab.draw(payload)
+                    win = self._chart_windows.get(payload)
+                    if win is not None and win.winfo_exists():
+                        data = self.registry.get(payload)
+                        if data:
+                            win.refresh(data)
                 elif msg_type == "pull_status":
                     status, sym = payload
                     self._stock_tab.set_pull_status(status, sym)

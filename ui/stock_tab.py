@@ -26,6 +26,7 @@ class StockManagerTab(ttk.Frame):
         on_update_preds:  Callable,
         on_update_scores: Callable,
         on_view_score:    Callable,
+        on_show_chart:    Callable,
     ) -> None:
         super().__init__(parent)
         self._on_add           = on_add
@@ -36,7 +37,9 @@ class StockManagerTab(ttk.Frame):
         self._on_update_preds  = on_update_preds
         self._on_update_scores = on_update_scores
         self._on_view_score    = on_view_score
+        self._on_show_chart    = on_show_chart
 
+        self._all_iids: set = set()
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
         self._build_controls()
@@ -91,6 +94,7 @@ class StockManagerTab(ttk.Frame):
             tag = "error" if "Error" in status else "training"
 
         vals = (symbol, current, sentiment, conf, signal, status)
+        self._all_iids.add(symbol)
         if self._tree_has(symbol):
             self.tree.item(symbol, values=vals, tags=(tag,))
         else:
@@ -102,6 +106,7 @@ class StockManagerTab(ttk.Frame):
 
     # Delete symbol's row from the table if it exists.
     def remove_row(self, symbol: str) -> None:
+        self._all_iids.discard(symbol)
         if self._tree_has(symbol):
             self.tree.delete(symbol)
 
@@ -152,7 +157,14 @@ class StockManagerTab(ttk.Frame):
         tbl = ttk.LabelFrame(self, text="Tracked Stocks", padding="6")
         tbl.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
         tbl.columnconfigure(0, weight=1)
-        tbl.rowconfigure(0, weight=1)
+        tbl.rowconfigure(1, weight=1)
+
+        search_row = ttk.Frame(tbl)
+        search_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Label(search_row, text="Filter:").pack(side="left", padx=(0, 4))
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._apply_filter())
+        ttk.Entry(search_row, textvariable=self._search_var, width=16).pack(side="left")
 
         cols = ("Symbol", "Current Price", "Sentiment", "Confidence", "Signal", "Status")
         self.tree = ttk.Treeview(tbl, columns=cols, show="headings", height=10)
@@ -164,8 +176,9 @@ class StockManagerTab(ttk.Frame):
         self.tree.tag_configure("error",    background="#ffebee")
         vsb = ttk.Scrollbar(tbl, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
+        self.tree.grid(row=1, column=0, sticky="nsew")
+        vsb.grid(row=1, column=1, sticky="ns")
+        self.bind_all("<Button-1>", self._on_global_click)
 
     # Build the row of action buttons (Predict All, Update All, Remove, Export, View Score).
     def _build_action_buttons(self) -> None:
@@ -179,6 +192,7 @@ class StockManagerTab(ttk.Frame):
             ("Update Predictions", self._on_update_preds),
             ("Update Scores",      self._on_update_scores),
             ("View Score",         self._view_score),
+            ("Show Chart",         self._show_chart),
         ]:
             ttk.Button(btn, text=text, command=cmd).pack(side="left", padx=2)
 
@@ -226,9 +240,38 @@ class StockManagerTab(ttk.Frame):
             return
         self._on_view_score(syms[0])
 
+    # Validate a single selection and fire the on_show_chart callback for it.
+    def _show_chart(self) -> None:
+        syms = self.selected_symbols()
+        if not syms:
+            messagebox.showwarning("Warning", "Select a stock first.")
+            return
+        self._on_show_chart(syms[0])
+
     # ------------------------------------------------------------------ #
     #  Helpers                                                            #
     # ------------------------------------------------------------------ #
+
+    # Show only rows whose symbol contains the filter text (case-insensitive).
+    def _apply_filter(self) -> None:
+        query = self._search_var.get().strip().upper()
+        attached = set(self.tree.get_children(""))
+        for iid in self._all_iids:
+            matches = not query or query in iid
+            in_tree = iid in attached
+            if matches and not in_tree:
+                self.tree.reattach(iid, "", "end")
+            elif not matches and in_tree:
+                self.tree.detach(iid)
+
+    # Deselect all rows when clicking on a neutral (non-interactive) area outside the Treeview.
+    def _on_global_click(self, event: tk.Event) -> None:
+        w = event.widget
+        if w is self.tree:
+            return
+        neutral = (ttk.Frame, ttk.LabelFrame, tk.Frame, tk.Label)
+        if isinstance(w, neutral):
+            self.tree.selection_set([])
 
     # Return True if iid exists in the Treeview (suppresses the TclError from missing items).
     def _tree_has(self, iid: str) -> bool:

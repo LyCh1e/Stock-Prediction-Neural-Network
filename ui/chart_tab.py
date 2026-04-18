@@ -1,12 +1,11 @@
-# Charts tab widget: one sub-tab per tracked stock with a Matplotlib chart.
-# Handles rendering, hover tooltips, zoom buttons, and the navigation toolbar only.
+# Popup window showing the price history and prediction chart for one stock symbol.
 
 from __future__ import annotations
 
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import ttk
-from typing import Dict, List
+from typing import List
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -17,123 +16,75 @@ from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
-# Tab containing one sub-tab per tracked stock, each with a price chart.
-class ChartsTab(ttk.Frame):
+# Toplevel popup that renders a price + prediction chart for a single symbol.
+class StockChartWindow(tk.Toplevel):
 
-    def __init__(self, parent) -> None:
-        super().__init__(parent)
+    def __init__(self, root: tk.Tk, symbol: str, data: dict) -> None:
+        super().__init__(root)
+        self.title(f"{symbol} — Chart")
+        self.geometry("1050x620")
+        self.resizable(True, True)
+
+        self._symbol  = symbol
+        self._canvas  = None
+        self._toolbar = None
+        self._cid     = None
+        self._view    = None   # saved (xlim, ylim) across refreshes
+
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        ctrl = ttk.Frame(self)
-        ctrl.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
-        ttk.Button(ctrl, text="Refresh Charts", command=self.refresh_all).pack(side="left", padx=4)
-        ttk.Label(
-            ctrl,
-            text="Tip: use the toolbar below each chart to zoom, pan, or save",
-            foreground="#666",
-            font=("TkDefaultFont", 8),
-        ).pack(side="left", padx=12)
+        self._frame = ttk.Frame(self)
+        self._frame.grid(row=0, column=0, sticky="nsew")
+        self._frame.columnconfigure(0, weight=1)
+        self._frame.rowconfigure(0, weight=1)
 
-        self._nb      = ttk.Notebook(self)
-        self._nb.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+        self._render(data)
 
-        self._tabs:    Dict[str, ttk.Frame]             = {}
-        self._canvas:  Dict[str, FigureCanvasTkAgg]     = {}
-        self._toolbar: Dict[str, NavigationToolbar2Tk]  = {}
-        self._cids:    Dict[str, int]                   = {}
-        self._view:    Dict[str, tuple]                 = {}   # saved (xlim, ylim)
-        self._store_ref = None   # set by the app after construction
-
-    # Inject the StockRegistry so charts can pull live data when rendering.
-    def set_store(self, store) -> None:
-        self._store_ref = store
+    # Re-render with fresh data (called when a new prediction arrives).
+    def refresh(self, data: dict) -> None:
+        self._render(data)
 
     # ------------------------------------------------------------------ #
-    #  Public API                                                         #
+    #  Rendering                                                          #
     # ------------------------------------------------------------------ #
 
-    # Create a sub-tab for symbol if one doesn't already exist.
-    def ensure_tab(self, symbol: str) -> None:
-        if symbol not in self._tabs:
-            frame = ttk.Frame(self._nb)
-            self._nb.add(frame, text=f"  {symbol}  ")
-            self._tabs[symbol] = frame
+    def _render(self, data: dict) -> None:
+        frame = self._frame
 
-    # Remove symbol's sub-tab, disconnect its hover handler, and close its Matplotlib figure.
-    def remove_tab(self, symbol: str) -> None:
-        if symbol in self._tabs:
-            frame = self._tabs.pop(symbol)
-            self._nb.forget(self._nb.index(frame))
-        if symbol in self._cids and symbol in self._canvas:
+        # Disconnect old hover handler before destroying canvas
+        if self._cid is not None and self._canvas is not None:
             try:
-                self._canvas[symbol].mpl_disconnect(self._cids.pop(symbol))
+                self._canvas.mpl_disconnect(self._cid)
             except Exception:
                 pass
-        if symbol in self._canvas:
+            self._cid = None
+
+        # Save current zoom view
+        if self._canvas is not None:
             try:
-                plt.close(self._canvas[symbol].figure)
-            except Exception:
-                pass
-        self._canvas.pop(symbol, None)
-        self._toolbar.pop(symbol, None)
-
-    # Pull data from the registry and render the chart for symbol.
-    def draw(self, symbol: str) -> None:
-        if self._store_ref is None:
-            return
-        data = self._store_ref.get(symbol)
-        if not data:
-            return
-        self.ensure_tab(symbol)
-        self._render(symbol, data)
-
-    # Redraw the chart for every currently tracked symbol.
-    def refresh_all(self) -> None:
-        if self._store_ref is None:
-            return
-        for sym in self._store_ref.symbols():
-            self.draw(sym)
-
-    # ------------------------------------------------------------------ #
-    #  Chart rendering                                                    #
-    # ------------------------------------------------------------------ #
-
-    # Destroy the old canvas, build a new Matplotlib figure with price history and predictions,
-    # embed it in the tab, and attach the hover crosshair and zoom buttons.
-    def _render(self, symbol: str, data: dict) -> None:
-        frame = self._tabs[symbol]
-
-        # Disconnect old event handler to break the on_move ↔ canvas reference
-        # cycle before the cyclic GC has a chance to collect it from a bg thread.
-        if symbol in self._cids and symbol in self._canvas:
-            try:
-                self._canvas[symbol].mpl_disconnect(self._cids.pop(symbol))
-            except Exception:
-                pass
-
-        # Save current view before destroying old canvas
-        if symbol in self._canvas:
-            try:
-                old_fig = self._canvas[symbol].figure
-                old_ax  = old_fig.axes[0] if old_fig.axes else None
+                old_ax = self._canvas.figure.axes[0] if self._canvas.figure.axes else None
                 if old_ax is not None:
-                    self._view[symbol] = (old_ax.get_xlim(), old_ax.get_ylim())
-                plt.close(old_fig)
-                self._canvas[symbol].get_tk_widget().destroy()
+                    self._view = (old_ax.get_xlim(), old_ax.get_ylim())
+                plt.close(self._canvas.figure)
+                self._canvas.get_tk_widget().destroy()
             except Exception:
                 pass
-        if symbol in self._toolbar:
+            self._canvas = None
+        if self._toolbar is not None:
             try:
-                self._toolbar[symbol].destroy()
+                self._toolbar.destroy()
             except Exception:
                 pass
+            self._toolbar = None
+
         for w in frame.winfo_children():
             w.destroy()
 
         df           = data.get("raw_df")
         pred         = data.get("prediction")
         pred_history = data.get("pred_history", [])
+        symbol       = self._symbol
 
         fig, ax = plt.subplots(figsize=(12, 6))
         fig.patch.set_facecolor("#fafafa")
@@ -211,10 +162,10 @@ class ChartsTab(ttk.Frame):
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=8)
         ax.legend(fontsize=8, loc="upper left", framealpha=0.85)
 
-        # ── 4b. Y-axis limits: restore saved view or default to 6 months ─ #
-        if symbol in self._view:
-            ax.set_xlim(*self._view[symbol][0])
-            ax.set_ylim(*self._view[symbol][1])
+        # ── 4b. Y-axis limits ─────────────────────────────────────── #
+        if self._view is not None:
+            ax.set_xlim(*self._view[0])
+            ax.set_ylim(*self._view[1])
         else:
             cutoff = today - timedelta(days=182)
             recent_closes = [
@@ -245,10 +196,8 @@ class ChartsTab(ttk.Frame):
         fig.tight_layout(pad=1.8)
 
         # ── 6. Embed canvas ───────────────────────────────────────── #
-        # Pack bottom frames first so canvas expand=True doesn't crowd them out
-        tb_frame = tk.Frame(frame, bg="#f0f0f0")
+        tb_frame  = tk.Frame(frame, bg="#f0f0f0")
         tb_frame.pack(fill="x", side="bottom")
-
         btn_frame = tk.Frame(frame, bg="#f0f0f0")
         btn_frame.pack(fill="x", side="bottom")
 
@@ -268,7 +217,7 @@ class ChartsTab(ttk.Frame):
             new_ylim = (ymid - (ymid - ylo) * factor, ymid + (yhi - ymid) * factor)
             ax.set_xlim(*new_xlim)
             ax.set_ylim(*new_ylim)
-            self._view[symbol] = (new_xlim, new_ylim)
+            self._view = (new_xlim, new_ylim)
             canvas.draw_idle()
 
         tk.Button(btn_frame, text="  +  ", command=lambda: _zoom(0.8),
@@ -278,8 +227,8 @@ class ChartsTab(ttk.Frame):
         tk.Label(btn_frame, text="Zoom", bg="#f0f0f0", fg="#666",
                  font=("TkDefaultFont", 8)).pack(side="left", padx=2)
 
-        self._canvas[symbol]  = canvas
-        self._toolbar[symbol] = toolbar
+        self._canvas  = canvas
+        self._toolbar = toolbar
 
         # ── 7. Hover handler ─────────────────────────────────────── #
         def on_move(event):
@@ -320,4 +269,4 @@ class ChartsTab(ttk.Frame):
             info_box.set_text(text); info_box.set_visible(True)
             canvas.draw_idle()
 
-        self._cids[symbol] = canvas.mpl_connect("motion_notify_event", on_move)
+        self._cid = canvas.mpl_connect("motion_notify_event", on_move)

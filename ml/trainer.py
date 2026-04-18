@@ -73,10 +73,8 @@ class ModelTrainer:
         y: np.ndarray,
         epochs: int = 200,
     ) -> None:
-        for epoch in range(epochs):
-            loss = network.train_step(X, y)
-            if epoch % 20 == 0:
-                print(f"Epoch {epoch}, Loss: {loss:.6f}")
+        for _ in range(epochs):
+            network.train_step(X, y)
 
     # ------------------------------------------------------------------ #
     #  Recent-data extraction for adaptive updates                        #
