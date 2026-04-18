@@ -25,8 +25,11 @@ class EditModelTab(ttk.Frame):
     # Repopulate the table with the current list of (symbol, lookback, epochs) tuples.
     def load(self, stocks: List[tuple]) -> None:
         self.tree.delete(*self.tree.get_children())
+        self._all_iids.clear()
         for symbol, lookback, epochs in stocks:
             self.tree.insert("", "end", iid=symbol, values=(symbol, lookback, epochs))
+            self._all_iids.add(symbol)
+        self._apply_filter()
 
     # ------------------------------------------------------------------ #
     #  Widget construction                                                #
@@ -36,33 +39,33 @@ class EditModelTab(ttk.Frame):
         box = ttk.LabelFrame(self, text="What do these settings mean?", padding="10")
         box.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
 
-        ttk.Label(
-            box,
-            text=(
-                "Lookback (Loop):  How many past days the model looks at to make a prediction.\n"
-                "                          More days = more context, but slower training.\n"
-                "                          Recommended: 5 – 20 days."
-            ),
-            justify="left",
-            font=("Helvetica", 9),
-        ).pack(anchor="w", pady=(0, 6))
+        row1 = ttk.Frame(box)
+        row1.pack(anchor="w", pady=(0, 4))
+        ttk.Label(row1, text="Lookback:", font=("Helvetica", 9, "bold")).pack(side="left")
+        ttk.Label(row1, text=" how many past days the model uses to predict (recommended 5–20).",
+                  font=("Helvetica", 9)).pack(side="left")
 
-        ttk.Label(
-            box,
-            text=(
-                "Epochs:               How many times the model trains on the data.\n"
-                "                          More epochs = more refined, but takes longer.\n"
-                "                          Recommended: 100 – 300 epochs."
-            ),
-            justify="left",
-            font=("Helvetica", 9),
-        ).pack(anchor="w")
+        row2 = ttk.Frame(box)
+        row2.pack(anchor="w")
+        ttk.Label(row2, text="Epochs:", font=("Helvetica", 9, "bold")).pack(side="left")
+        ttk.Label(row2, text=" how many times the model trains over the data (recommended 100–300).",
+                  font=("Helvetica", 9)).pack(side="left")
 
     def _build_table(self) -> None:
         tbl = ttk.LabelFrame(self, text="Tracked Stocks", padding="6")
         tbl.grid(row=1, column=0, sticky="nsew", padx=10, pady=4)
         tbl.columnconfigure(0, weight=1)
+        tbl.rowconfigure(1, weight=1)
         self.rowconfigure(1, weight=1)
+
+        search_row = ttk.Frame(tbl)
+        search_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Label(search_row, text="Filter:").pack(side="left", padx=(0, 4))
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._apply_filter())
+        ttk.Entry(search_row, textvariable=self._search_var, width=16).pack(side="left")
+
+        self._all_iids: set = set()
 
         cols = ("Symbol", "Lookback", "Epochs")
         self.tree = ttk.Treeview(tbl, columns=cols, show="headings", height=8,
@@ -73,8 +76,8 @@ class EditModelTab(ttk.Frame):
 
         vsb = ttk.Scrollbar(tbl, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
+        self.tree.grid(row=1, column=0, sticky="nsew")
+        vsb.grid(row=1, column=1, sticky="ns")
 
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
@@ -103,6 +106,17 @@ class EditModelTab(ttk.Frame):
     # ------------------------------------------------------------------ #
     #  Handlers                                                           #
     # ------------------------------------------------------------------ #
+
+    def _apply_filter(self) -> None:
+        query    = self._search_var.get().strip().upper()
+        attached = set(self.tree.get_children(""))
+        for iid in self._all_iids:
+            matches = not query or query in iid
+            in_tree = iid in attached
+            if matches and not in_tree:
+                self.tree.reattach(iid, "", "end")
+            elif not matches and in_tree:
+                self.tree.detach(iid)
 
     def _on_select(self, _event) -> None:
         sel = self.tree.selection()
