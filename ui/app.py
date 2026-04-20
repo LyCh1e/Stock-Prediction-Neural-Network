@@ -315,7 +315,7 @@ class StockPriceApp:
                 ))
             else:
                 is_weekend = r.date.weekday() >= 5
-                actual_label = "Not Available" if is_weekend else "Pending"
+                actual_label = "Not Available *" if is_weekend else "Pending"
                 tree.insert("", "end", tags=("pending",), values=(
                     date_str, f"${r.avg:.2f}", f"${r.best:.2f}", f"${r.worst:.2f}",
                     actual_label, "—", "—", "—",
@@ -328,7 +328,12 @@ class StockPriceApp:
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
 
+        ttk.Label(win, text="* Not Available entries (weekend/holiday predictions) are excluded from score calculations.",
+                  font=("Helvetica", 8), foreground="#777", anchor="w").pack(fill="x", padx=12, pady=(0, 2))
+
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=6)
+
+        threading.Thread(target=self.registry.update_scores, daemon=True).start()
 
     # ------------------------------------------------------------------ #
     #  Auto-update background threads                                     #
