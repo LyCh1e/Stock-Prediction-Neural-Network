@@ -127,6 +127,9 @@ Composite score (0–100) from three components:
 
 Letter grades: A+ (≥93) → F (<20). Scores update automatically after every prediction cycle.
 
+![Prediction Score](figures/prediction_score.png)
+*Prediction score breakdown with letter grades and per-prediction accuracy metrics*
+
 ### Service & Registry (`services/`)
 
 - `StockTradingService` — orchestrates data fetching, feature engineering, training, prediction, and adaptive updates
@@ -180,6 +183,9 @@ Updates every 60 seconds automatically.
 
 ### GUI Workflow
 
+![Stock Tracker](figures/stock_tracker.png)
+*Stock Manager tab showing tracked symbols, predictions, scores, and activity log*
+
 ```
 1. python launch.py
 2. Enter a stock symbol (e.g. AAPL) and click "Add & Train"
@@ -204,6 +210,12 @@ Updates every 60 seconds automatically.
 | Update Scores | Write the full prediction score breakdown to `prediction_score.xlsx` — all archived predictions, with Actual Close filled in where available and "Pending" / "Not Available" for future or weekend dates |
 | View Score | Show accuracy score and all archived predictions for the selected stock in a popup window — matches `prediction_score.xlsx` one-to-one |
 | Show Chart | Open a chart popup for the selected stock showing price history and forecast; brings existing window to front if already open |
+
+![Stock Graph](figures/stock_graph.png)
+*Per-stock chart popup with actual price history and best/average/worst case forecast bands*
+
+![Edit Model](figures/edit_model.png)
+*Edit Model tab for adjusting lookback and epoch settings per stock*
 
 ### Scenario Generation
 
