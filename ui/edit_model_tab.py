@@ -42,13 +42,13 @@ class EditModelTab(ttk.Frame):
         row1 = ttk.Frame(box)
         row1.pack(anchor="w", pady=(0, 4))
         ttk.Label(row1, text="Lookback:", font=("Helvetica", 9, "bold")).pack(side="left")
-        ttk.Label(row1, text=" how many past days the model uses to predict (recommended 5–20).",
+        ttk.Label(row1, text=" how many past days the model uses to predict.",
                   font=("Helvetica", 9)).pack(side="left")
 
         row2 = ttk.Frame(box)
         row2.pack(anchor="w")
         ttk.Label(row2, text="Epochs:", font=("Helvetica", 9, "bold")).pack(side="left")
-        ttk.Label(row2, text=" how many times the model trains over the data (recommended 100–300).",
+        ttk.Label(row2, text=" how many times the model trains over the data.",
                   font=("Helvetica", 9)).pack(side="left")
 
     def _build_table(self) -> None:
