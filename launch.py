@@ -31,7 +31,7 @@ class _Splash:
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
 
-        w, h = 420, 460
+        w, h = 500, 550
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
