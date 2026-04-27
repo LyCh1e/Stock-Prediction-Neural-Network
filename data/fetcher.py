@@ -54,7 +54,7 @@ class YahooFinanceFetcher(IDataFetcher):
                 "high":   df_raw["High"],
                 "low":    df_raw["Low"],
                 "close":  df_raw["Close"],
-                "volume": df_raw["Volume"].astype(int),
+                "volume": df_raw["Volume"].fillna(0).astype(int),
             })
             df.index = pd.DatetimeIndex(df_raw.index).tz_localize(None)
             df.index.name = "date"

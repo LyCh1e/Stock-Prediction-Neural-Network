@@ -69,7 +69,7 @@ class StockPredictor:
                 "high":   float(high_pred),
                 "low":    float(low_pred),
                 "close":  float(close_pred),
-                "volume": int(volume_pred),
+                "volume": int(volume_pred) if not np.isnan(volume_pred) else 0,
                 "expected_change":     float(close_pred - current_close),
                 "expected_change_pct": float((close_pred - current_close) / current_close * 100),
                 "uncertainty":         float(close_uncert),
