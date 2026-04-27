@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 from datetime import datetime
@@ -31,13 +32,23 @@ class CsvHistoryRepository(IHistoryRepository):
 
         rows = []
         for p in pred_history:
+            try:
+                avg   = float(p["avg"])
+                best  = float(p["best"])
+                worst = float(p["worst"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (math.isfinite(avg) and math.isfinite(best) and math.isfinite(worst)):
+                continue
+            if avg <= 0 or best <= 0 or worst <= 0:
+                continue
             dt = p["date"]
             rows.append({
                 "Symbol": symbol,
                 "Date":   dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(dt, "strftime") else str(dt),
-                "Avg":    round(float(p.get("avg",   0)), 4),
-                "Best":   round(float(p.get("best",  0)), 4),
-                "Worst":  round(float(p.get("worst", 0)), 4),
+                "Avg":    round(avg,   4),
+                "Best":   round(best,  4),
+                "Worst":  round(worst, 4),
             })
 
         df_new = pd.DataFrame(rows)
@@ -73,14 +84,24 @@ class CsvHistoryRepository(IHistoryRepository):
             records = []
             for _, row in df.iterrows():
                 try:
+                    avg   = float(row["Avg"])
+                    best  = float(row["Best"])
+                    worst = float(row["Worst"])
+                except (TypeError, ValueError):
+                    continue
+                if not (math.isfinite(avg) and math.isfinite(best) and math.isfinite(worst)):
+                    continue
+                if avg <= 0 or best <= 0 or worst <= 0:
+                    continue
+                try:
                     dt = datetime.strptime(str(row["Date"]), "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     dt = datetime.strptime(str(row["Date"])[:10], "%Y-%m-%d")
                 records.append({
                     "date":  dt,
-                    "avg":   float(row["Avg"]),
-                    "best":  float(row["Best"]),
-                    "worst": float(row["Worst"]),
+                    "avg":   avg,
+                    "best":  best,
+                    "worst": worst,
                 })
             return records
         except Exception:

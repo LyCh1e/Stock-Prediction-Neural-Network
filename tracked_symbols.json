@@ -4,12 +4,12 @@
     "epochs": 300
   },
   "AAPL": {
-    "lookback": 10,
+    "lookback": 40,
     "epochs": 200
   },
   "MSFT": {
-    "lookback": 10,
-    "epochs": 200
+    "lookback": 40,
+    "epochs": 300
   },
   "AMZN": {
     "lookback": 20,
@@ -18,5 +18,9 @@
   "META": {
     "lookback": 30,
     "epochs": 250
+  },
+  "NVDA": {
+    "lookback": 30,
+    "epochs": 300
   }
 }

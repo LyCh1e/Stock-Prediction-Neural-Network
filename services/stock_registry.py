@@ -344,14 +344,25 @@ class StockRegistry:
 
     # Move the current prediction into pred_history (upsert by date) and refresh the accuracy score.
     def _archive_prediction(self, data: StockEntry) -> None:
+        import math
         old_pred = data.get("prediction")
         if old_pred and "scenarios" in old_pred:
+            try:
+                avg   = float(old_pred["scenarios"]["average_case"]["close"])
+                best  = float(old_pred["scenarios"]["best_case"]["close"])
+                worst = float(old_pred["scenarios"]["worst_case"]["close"])
+            except (KeyError, TypeError, ValueError):
+                return
+            if not (math.isfinite(avg) and math.isfinite(best) and math.isfinite(worst)):
+                return
+            if avg <= 0 or best <= 0 or worst <= 0:
+                return
             today = datetime.now().date()
             entry = {
                 "date":  datetime.now(),
-                "avg":   old_pred["scenarios"]["average_case"]["close"],
-                "best":  old_pred["scenarios"]["best_case"]["close"],
-                "worst": old_pred["scenarios"]["worst_case"]["close"],
+                "avg":   avg,
+                "best":  best,
+                "worst": worst,
             }
             ph = data["pred_history"]
             for i, existing in enumerate(ph):
