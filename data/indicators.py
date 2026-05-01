@@ -7,7 +7,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
 # Stateless helper — all methods are static, no instance state needed.
 class TechnicalIndicators:
 
@@ -37,7 +36,7 @@ class TechnicalIndicators:
         return df
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                    #
+    # Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
     # Choose rolling window sizes that scale gracefully with available data length.

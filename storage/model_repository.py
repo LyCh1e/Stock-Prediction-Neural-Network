@@ -24,7 +24,7 @@ class JsonModelRepository(IModelRepository):
         self._filepath = filepath
 
     # ------------------------------------------------------------------ #
-    #  IModelRepository implementation                                    #
+    # IModelRepository implementation                                    #
     # ------------------------------------------------------------------ #
 
     # Serialise model weights and scaler_params to JSON, writing atomically via a temp file.
@@ -84,7 +84,7 @@ class JsonModelRepository(IModelRepository):
         return entry.get("scaler_params", {})
 
     # ------------------------------------------------------------------ #
-    #  Private                                                            #
+    # Private                                                            #
     # ------------------------------------------------------------------ #
 
     # Read and return the entire JSON file as a dict, or {} if it doesn't exist.

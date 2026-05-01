@@ -30,7 +30,7 @@ class StockTradingService:
         self.lookback_window = max(3, lookback_window)
 
     # ------------------------------------------------------------------ #
-    #  Public interface                                                   #
+    # Public interface                                                   #
     # ------------------------------------------------------------------ #
 
     # Fetch OHLCV data, build sequences, run training, and return (data_points, raw_df, scaler_params).

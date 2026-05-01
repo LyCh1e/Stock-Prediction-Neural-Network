@@ -32,7 +32,7 @@ class ExcelExporter:
         self._score_file = scores_file
 
     # ------------------------------------------------------------------ #
-    #  OHLCV data                                                         #
+    # OHLCV data                                                         #
     # ------------------------------------------------------------------ #
 
     # Write all stocks' OHLCV data to Excel (one sheet per symbol), overwriting the file.
@@ -85,7 +85,7 @@ class ExcelExporter:
         return os.path.abspath(self._data_file)
 
     # ------------------------------------------------------------------ #
-    #  Predictions                                                        #
+    # Predictions                                                        #
     # ------------------------------------------------------------------ #
 
     # Write all stocks' prediction scenarios to Excel (one sheet per symbol), overwriting the file.
@@ -122,7 +122,7 @@ class ExcelExporter:
         return os.path.abspath(self._pred_file)
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                    #
+    # Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
     # Extract and clean the OHLCV DataFrame from a stock entry for Excel export (excludes today).
@@ -218,7 +218,7 @@ class ExcelExporter:
         return pd.DataFrame(rows)
 
     # ------------------------------------------------------------------ #
-    #  Scores (prediction_score.xlsx)                                     #
+    # Scores (prediction_score.xlsx)                                     #
     # ------------------------------------------------------------------ #
 
     _SCORE_COLUMNS = [

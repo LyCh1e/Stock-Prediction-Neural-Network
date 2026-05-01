@@ -22,7 +22,7 @@ class CsvHistoryRepository(IHistoryRepository):
         self._filepath = filepath
 
     # ------------------------------------------------------------------ #
-    #  IHistoryRepository implementation                                  #
+    # IHistoryRepository implementation                                  #
     # ------------------------------------------------------------------ #
 
     # Write the latest 5 prediction rows for symbol to CSV, replacing any existing rows for that symbol.

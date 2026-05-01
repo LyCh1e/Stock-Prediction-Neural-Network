@@ -29,7 +29,7 @@ class NeuralNetwork:
         self.prediction_errors: list = []
 
     # ------------------------------------------------------------------ #
-    #  Forward / Backward                                                 #
+    # Forward / Backward                                                 #
     # ------------------------------------------------------------------ #
 
     # Run input through W1→ReLU→W2; return z1, a1, and output so backward() can reuse them.
@@ -73,7 +73,7 @@ class NeuralNetwork:
         self.b1 -= lr * dL_db1
 
     # ------------------------------------------------------------------ #
-    #  Training helpers                                                   #
+    # Training helpers                                                   #
     # ------------------------------------------------------------------ #
 
     # Run one forward+backward pass, record the MSE loss, and return it.
@@ -92,7 +92,7 @@ class NeuralNetwork:
         self.prediction_errors.append(error)
 
     # ------------------------------------------------------------------ #
-    #  Inference                                                          #
+    # Inference                                                          #
     # ------------------------------------------------------------------ #
 
     # Run a forward pass and return the output array (point estimate, no uncertainty).
@@ -112,7 +112,7 @@ class NeuralNetwork:
         return np.mean(preds, axis=0), np.std(preds, axis=0)
 
     # ------------------------------------------------------------------ #
-    #  Activation functions                                               #
+    # Activation functions                                               #
     # ------------------------------------------------------------------ #
 
     # Clamp negatives to zero element-wise (ReLU activation).

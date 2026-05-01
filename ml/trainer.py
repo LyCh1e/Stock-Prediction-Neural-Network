@@ -22,7 +22,7 @@ _FEATURE_COLS = [
 class ModelTrainer:
 
     # ------------------------------------------------------------------ #
-    #  Data preparation                                                   #
+    # Data preparation                                                   #
     # ------------------------------------------------------------------ #
 
     # Normalise df and build sliding-window sequences; returns X, y, and per-feature scaler_params.
@@ -62,7 +62,7 @@ class ModelTrainer:
         return result
 
     # ------------------------------------------------------------------ #
-    #  Training loop                                                      #
+    # Training loop                                                      #
     # ------------------------------------------------------------------ #
 
     # Run epochs forward+backward passes on network, logging loss every 20 epochs.
@@ -77,7 +77,7 @@ class ModelTrainer:
             network.train_step(X, y)
 
     # ------------------------------------------------------------------ #
-    #  Recent-data extraction for adaptive updates                        #
+    # Recent-data extraction for adaptive updates                        #
     # ------------------------------------------------------------------ #
 
     # Return the last n sequences from df using existing scaler_params, for incremental updates.
@@ -99,7 +99,7 @@ class ModelTrainer:
         return X, y
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                    #
+    # Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
     # Z-score normalise all feature columns; return the stacked array and per-column mean/std.

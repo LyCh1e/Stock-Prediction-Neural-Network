@@ -38,7 +38,7 @@ class StockRegistry:
         self._exporter   = excel_exporter
 
     # ------------------------------------------------------------------ #
-    #  Public registry accessors                                          #
+    # Public registry accessors                                          #
     # ------------------------------------------------------------------ #
 
     @property
@@ -58,7 +58,7 @@ class StockRegistry:
         return symbol in self._stocks
 
     # ------------------------------------------------------------------ #
-    #  Create / Delete                                                    #
+    # Create / Delete                                                    #
     # ------------------------------------------------------------------ #
 
     # Add symbol to the registry, persist it, and kick off a training thread; returns False if duplicate.
@@ -108,7 +108,7 @@ class StockRegistry:
         return sorted(by_date.values(), key=lambda e: e["date"])
 
     # ------------------------------------------------------------------ #
-    #  Trigger background operations                                      #
+    # Trigger background operations                                      #
     # ------------------------------------------------------------------ #
 
     # Spawn a background thread to run a fresh prediction for symbol.
@@ -120,7 +120,7 @@ class StockRegistry:
         threading.Thread(target=self._update_thread, args=(symbol,), daemon=True).start()
 
     # ------------------------------------------------------------------ #
-    #  Symbol persistence                                                 #
+    # Symbol persistence                                                 #
     # ------------------------------------------------------------------ #
 
     # Load persisted symbols from disk and queue a training thread for each one.
@@ -143,7 +143,7 @@ class StockRegistry:
             self._cb("log", f"Queued training for {symbol} (restored from save)")
 
     # ------------------------------------------------------------------ #
-    #  Excel export delegates                                             #
+    # Excel export delegates                                             #
     # ------------------------------------------------------------------ #
 
     # Delegate OHLCV Excel update to the exporter; return the file path.
@@ -169,7 +169,7 @@ class StockRegistry:
         return self._exporter.migrate_scores_from_predictions()
 
     # ------------------------------------------------------------------ #
-    #  Background thread workers                                          #
+    # Background thread workers                                          #
     # ------------------------------------------------------------------ #
 
     # Background worker: fetch data, train (or resume), predict, save, and notify UI.
@@ -286,7 +286,7 @@ class StockRegistry:
             self._cb("log", f"✗ {symbol} update error: {exc}")
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                    #
+    # Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
     # Load error stats from prediction_score.xlsx and apply band calibration to pred.

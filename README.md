@@ -18,7 +18,8 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Interactive Charts**: Per-stock popup window with actual price history and forecast band (best/worst/avg); zoom / pan / save toolbar; auto-refreshes when a new prediction arrives
 - **Stock Filter**: Search bar in both the Stock Manager and Edit Model tabs to quickly filter tracked symbols by name
 - **Edit Model Tab**: Adjust lookback and epoch settings per stock without restarting; changes apply on the next training run
-- **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes — the UI never freezes
+- **Startup Splash Screen**: Dependency checker and data-file validator shown before the main window opens — missing packages and corrupt/absent files are flagged before any training starts
+- **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes; `stock_predictions.xlsx` and `prediction_score.xlsx` auto-saved every 20 minutes — the UI never freezes
 - **Live Current Price**: Current Price column reflects the latest traded price (intraday during market hours, official close after market close) — not a stale end-of-previous-day value
 - **Excel Export**: OHLCV history → `stock_data.xlsx`; prediction scenarios → `stock_predictions.xlsx`; full prediction score breakdown → `prediction_score.xlsx`
 
@@ -61,7 +62,7 @@ data/
 
 ml/
   network.py        — NeuralNetwork (forward/backward, Monte Carlo uncertainty)
-  trainer.py        — ModelTrainer (epoch loop, warm-up + step-decay LR schedule)
+  trainer.py        — ModelTrainer (epoch loop; adaptive LR halving lives in NeuralNetwork.backward)
   predictor.py      — StockPredictor (scenario generation)
 
 scoring/
@@ -84,7 +85,7 @@ ui/
   chart_tab.py     — StockChartWindow (on-demand popup chart per symbol)
   edit_model_tab.py — EditModelTab (per-stock lookback/epoch editor with filter)
 
-launch.py       — Dependency checker and entry point
+launch.py       — Splash screen, dependency checker, data-file validator, and entry point
 ```
 
 ### Neural Network (`ml/network.py`)
@@ -240,13 +241,13 @@ Three scenarios are derived from the base prediction by applying volatility mult
 
 | File / Directory | Purpose |
 |-----------------|---------|
-| `launch.py` | Dependency checker and entry point |
+| `launch.py` | Splash screen, dependency checker, data-file validator, and entry point |
 | `core/interfaces.py` | Abstract base classes: `IDataFetcher`, `IModelRepository`, `IHistoryRepository`, `ISymbolRepository` |
 | `core/models.py` | Shared data models (ScoreResult, PredictionRecord) |
 | `data/fetcher.py` | Yahoo Finance data fetcher |
 | `data/indicators.py` | Technical indicator calculations |
 | `ml/network.py` | Two-layer neural network |
-| `ml/trainer.py` | Training loop with warm-up + step-decay LR |
+| `ml/trainer.py` | Training loop (plain epoch loop; adaptive LR is in `NeuralNetwork.backward`) |
 | `ml/predictor.py` | Prediction and scenario generation |
 | `scoring/scorer.py` | `score_symbol()` — composite accuracy scoring |
 | `scoring/calibration.py` | `load_calibration()` / `apply_calibration()` — band calibration from historical residuals |

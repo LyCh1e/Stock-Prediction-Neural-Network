@@ -99,7 +99,7 @@ class StockPredictor:
         return result
 
     # ------------------------------------------------------------------ #
-    #  Private: scenario generation                                       #
+    # Private: scenario generation                                       #
     # ------------------------------------------------------------------ #
 
     # Build best/average/worst/realistic-range scenario dicts using volatility and sentiment.
@@ -190,7 +190,7 @@ class StockPredictor:
         }
 
     # ------------------------------------------------------------------ #
-    #  Private: confidence calculation                                    #
+    # Private: confidence calculation                                    #
     # ------------------------------------------------------------------ #
 
     # Average several confidence factors (data freshness, uncertainty, volatility, loss) into one score.
@@ -226,7 +226,7 @@ class StockPredictor:
         return max(0.50, min(0.95, confidence))
 
     # ------------------------------------------------------------------ #
-    #  Private: technical indicator summary                               #
+    # Private: technical indicator summary                               #
     # ------------------------------------------------------------------ #
 
     # Extract the latest indicator values from df and attach human-readable status labels.
@@ -297,7 +297,7 @@ class StockPredictor:
         return ind
 
     # ------------------------------------------------------------------ #
-    #  Input construction                                                 #
+    # Input construction                                                 #
     # ------------------------------------------------------------------ #
 
     # Normalise the last lookback_window rows of each feature and flatten into a (1, N) input array.

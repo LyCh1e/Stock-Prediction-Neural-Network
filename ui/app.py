@@ -44,7 +44,7 @@ class StockPriceApp:
         self._start_auto_threads()
 
     # ------------------------------------------------------------------ #
-    #  Tab construction                                                   #
+    # Tab construction                                                   #
     # ------------------------------------------------------------------ #
 
     # Create the Notebook, add the Stock Manager and Charts tabs, and wire their callbacks.
@@ -73,7 +73,7 @@ class StockPriceApp:
         nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
     # ------------------------------------------------------------------ #
-    #  Stock actions                                                      #
+    # Stock actions                                                      #
     # ------------------------------------------------------------------ #
 
     # Add symbol to the registry, update the table row, and ensure a chart tab exists.
@@ -173,7 +173,7 @@ class StockPriceApp:
             messagebox.showerror("Error", str(exc))
 
     # ------------------------------------------------------------------ #
-    #  Prediction score viewer                                            #
+    # Prediction score viewer                                            #
     # ------------------------------------------------------------------ #
 
     # Open the score viewer window for symbol; brings existing window to front if already open.
@@ -336,7 +336,7 @@ class StockPriceApp:
         threading.Thread(target=self.registry.update_scores, daemon=True).start()
 
     # ------------------------------------------------------------------ #
-    #  Auto-update background threads                                     #
+    # Auto-update background threads                                     #
     # ------------------------------------------------------------------ #
 
     # Run a manual GC cycle every 5 seconds to avoid background-thread collection issues.
@@ -403,7 +403,7 @@ class StockPriceApp:
                 self._queue.put(("log", f"Auto-export scores error: {exc}"))
 
     # ------------------------------------------------------------------ #
-    #  Message queue bridge (background → Tk main thread)                #
+    # Message queue bridge (background → Tk main thread)                 #
     # ------------------------------------------------------------------ #
 
     # Thread-safe: enqueue a (msg_type, payload) message for the Tk main thread to handle.
@@ -439,7 +439,7 @@ class StockPriceApp:
             self.root.after(100, self._process_queue)
 
     # ------------------------------------------------------------------ #
-    #  Market status ticker                                               #
+    # Market status ticker                                               #
     # ------------------------------------------------------------------ #
 
     # Check current ET time and update the market status indicator; reschedules itself every minute.

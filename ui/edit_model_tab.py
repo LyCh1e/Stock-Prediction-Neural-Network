@@ -19,7 +19,7 @@ class EditModelTab(ttk.Frame):
         self._build_editor()
 
     # ------------------------------------------------------------------ #
-    #  Public API                                                         #
+    # Public API                                                         #
     # ------------------------------------------------------------------ #
 
     # Repopulate the table with the current list of (symbol, lookback, epochs) tuples.
@@ -32,7 +32,7 @@ class EditModelTab(ttk.Frame):
         self._apply_filter()
 
     # ------------------------------------------------------------------ #
-    #  Widget construction                                                #
+    # Widget construction                                                #
     # ------------------------------------------------------------------ #
 
     def _build_explainer(self) -> None:
@@ -104,7 +104,7 @@ class EditModelTab(ttk.Frame):
             row=3, column=0, columnspan=2, pady=(8, 0))
 
     # ------------------------------------------------------------------ #
-    #  Handlers                                                           #
+    # Handlers                                                           #
     # ------------------------------------------------------------------ #
 
     def _apply_filter(self) -> None:
@@ -137,4 +137,4 @@ class EditModelTab(ttk.Frame):
         self._on_save(symbol, lookback, epochs)
         self.tree.item(symbol, values=(symbol, lookback, epochs))
         messagebox.showinfo("Saved", f"{symbol} updated — Lookback: {lookback}, Epochs: {epochs}.\n"
-                                     "Changes apply on the next training run.")
+                            "Changes apply on the next training run.")

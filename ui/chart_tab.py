@@ -46,7 +46,7 @@ class StockChartWindow(tk.Toplevel):
         self._render(data)
 
     # ------------------------------------------------------------------ #
-    #  Rendering                                                          #
+    # Rendering                                                          #
     # ------------------------------------------------------------------ #
 
     def _render(self, data: dict) -> None:

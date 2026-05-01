@@ -13,7 +13,6 @@ import pandas as pd
 from core.interfaces import IDataFetcher
 from data.indicators import TechnicalIndicators
 
-
 # Fetches stock data from Yahoo Finance with a synthetic-data fallback.
 class YahooFinanceFetcher(IDataFetcher):
 
@@ -26,7 +25,7 @@ class YahooFinanceFetcher(IDataFetcher):
             raise ImportError("yfinance is required. Install with: pip install yfinance")
 
     # ------------------------------------------------------------------ #
-    #  IDataFetcher implementation                                        #
+    # IDataFetcher implementation                                        #
     # ------------------------------------------------------------------ #
 
     # Download OHLCV data from Yahoo Finance for the given symbol and date range,
@@ -175,7 +174,7 @@ class YahooFinanceFetcher(IDataFetcher):
             return "HOLD"
 
     # ------------------------------------------------------------------ #
-    #  Private helpers                                                    #
+    # Private helpers                                                    #
     # ------------------------------------------------------------------ #
 
     # Generate realistic-looking synthetic OHLCV data via a geometric Brownian motion

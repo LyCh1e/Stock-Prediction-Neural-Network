@@ -50,7 +50,7 @@ class StockManagerTab(ttk.Frame):
         self._build_status_label()
 
     # ------------------------------------------------------------------ #
-    #  Public API (called by the main app)                                #
+    # Public API (called by the main app)                                #
     # ------------------------------------------------------------------ #
 
     # Append a timestamped message to the activity log and scroll to the bottom.
@@ -115,7 +115,7 @@ class StockManagerTab(ttk.Frame):
         return list(self.tree.selection())
 
     # ------------------------------------------------------------------ #
-    #  Widget construction                                                #
+    # Widget construction                                                #
     # ------------------------------------------------------------------ #
 
     # Build the "Add Stock" control row with symbol entry, lookback/epoch spinboxes, and Add button.
@@ -211,7 +211,7 @@ class StockManagerTab(ttk.Frame):
                   ).grid(row=5, column=0, sticky="ew", padx=8)
 
     # ------------------------------------------------------------------ #
-    #  Button handlers                                                    #
+    # Button handlers                                                    #
     # ------------------------------------------------------------------ #
 
     # Validate the symbol entry and fire the on_add callback; clear the entry on success.
@@ -249,7 +249,7 @@ class StockManagerTab(ttk.Frame):
         self._on_show_chart(syms[0])
 
     # ------------------------------------------------------------------ #
-    #  Helpers                                                            #
+    # Helpers                                                            #
     # ------------------------------------------------------------------ #
 
     # Show only rows whose symbol contains the filter text (case-insensitive).
