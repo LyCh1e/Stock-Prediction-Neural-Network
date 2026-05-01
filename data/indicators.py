@@ -118,3 +118,10 @@ class TechnicalIndicators:
         exp2 = df["close"].ewm(span=ema_long,   adjust=False, min_periods=1).mean()
         df["macd"]        = exp1 - exp2
         df["macd_signal"] = df["macd"].ewm(span=ema_signal, adjust=False, min_periods=1).mean()
+
+
+def ensure_indicators(df: pd.DataFrame, min_window: int) -> pd.DataFrame:
+    """Return df with indicators present; computes them on a copy if missing or all-NaN."""
+    if "sma_20" not in df.columns or df["sma_20"].isna().all():
+        return TechnicalIndicators.calculate(df.copy(), min_window=min_window)
+    return df

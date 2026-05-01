@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from data.indicators import TechnicalIndicators
+from data.indicators import ensure_indicators
 from ml.network import NeuralNetwork
 
 _FEATURE_COLS = [
@@ -31,9 +31,7 @@ class ModelTrainer:
         df: pd.DataFrame,
         lookback_window: int,
     ) -> Tuple[np.ndarray, np.ndarray, Dict]:
-        if "sma_20" not in df.columns or df["sma_20"].isna().all():
-            df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
-
+        df = ensure_indicators(df, lookback_window)
         df_feat = df[_FEATURE_COLS].copy().dropna()
 
         if len(df_feat) < lookback_window + 1:
@@ -88,9 +86,7 @@ class ModelTrainer:
         scaler_params: Dict,
         n: int = 3,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        if "sma_20" not in df.columns or df["sma_20"].isna().all():
-            df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
-
+        df = ensure_indicators(df, lookback_window)
         df_feat = df[_FEATURE_COLS].copy().dropna()
         normalized = self._normalise_with_params(df_feat, scaler_params)
         X, y = self._make_sequences(normalized, lookback_window)

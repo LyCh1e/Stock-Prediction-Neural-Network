@@ -9,7 +9,7 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
-from data.indicators import TechnicalIndicators
+from data.indicators import ensure_indicators
 from ml.network import NeuralNetwork
 from ml.trainer import ModelTrainer, _FEATURE_COLS
 
@@ -31,9 +31,7 @@ class StockPredictor:
         lookback_window: int,
         include_scenarios: bool = True,
     ) -> Dict:
-        if "sma_20" not in df.columns or df["sma_20"].isna().all():
-            df = TechnicalIndicators.calculate(df.copy(), min_window=lookback_window)
-
+        df = ensure_indicators(df, lookback_window)
         df_feat = df[_FEATURE_COLS].copy().dropna()
 
         if len(df_feat) < lookback_window:

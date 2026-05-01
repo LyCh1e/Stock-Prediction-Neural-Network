@@ -180,7 +180,7 @@ class StockPriceApp:
     def _view_score(self, symbol: str) -> None:
         import math
         import pandas as pd
-        from scoring.scorer import _parse_records, _prev_close
+        from scoring.scorer import _MAPE_DECAY, _W_DIR, _W_MAPE, _W_RANGE, _letter_grade, _parse_records, _prev_close
 
         data = self.registry.get(symbol)
         if data is None:
@@ -222,24 +222,19 @@ class StockPriceApp:
                 if prev is not None:
                     dir_correct.append((r.avg >= prev) == (actual >= prev))
 
-            mean_ape   = sum(abs_errs) / len(abs_errs)
-            mape_score = math.exp(-0.15 * mean_ape) * 100
-            dir_acc    = (sum(dir_correct) / len(dir_correct)) if dir_correct else 0.5
-            dir_score  = dir_acc * 100
+            mean_ape    = sum(abs_errs) / len(abs_errs)
+            mape_score  = math.exp(-_MAPE_DECAY * mean_ape) * 100
+            dir_acc     = (sum(dir_correct) / len(dir_correct)) if dir_correct else 0.5
+            dir_score   = dir_acc * 100
             range_frac  = sum(in_range_hits) / len(in_range_hits)
             range_score = range_frac * 100
 
-            final = round(min(100.0, (0.50 * math.exp(-0.15 * mean_ape)
-                                      + 0.30 * dir_acc
-                                      + 0.20 * range_frac) * 100), 1)
-
-            def _grade(s: float) -> str:
-                for threshold, g in [(93,"A+"),(87,"A"),(80,"A-"),(74,"B+"),(67,"B"),
-                                      (60,"B-"),(54,"C+"),(47,"C"),(40,"C-"),(34,"D+"),
-                                      (27,"D"),(20,"D-")]:
-                    if s >= threshold: return g
-                return "F"
-            grade = _grade(final)
+            final = round(min(100.0, max(0.0, (
+                _W_MAPE * math.exp(-_MAPE_DECAY * mean_ape)
+                + _W_DIR * dir_acc
+                + _W_RANGE * range_frac
+            ) * 100)), 1)
+            grade = _letter_grade(final)
         else:
             mean_ape = mape_score = dir_score = range_score = final = 0.0
             dir_acc = range_frac = 0.0
