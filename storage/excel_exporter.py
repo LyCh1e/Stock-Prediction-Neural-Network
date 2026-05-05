@@ -35,6 +35,20 @@ class ExcelExporter:
     # OHLCV data                                                         #
     # ------------------------------------------------------------------ #
 
+    # Read a symbol's OHLCV sheet from stock_data.xlsx and return a lowercase-column DataFrame.
+    def load_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
+        if not os.path.exists(self._data_file):
+            return None
+        try:
+            df = pd.read_excel(
+                self._data_file, sheet_name=symbol, index_col=0, engine="openpyxl"
+            )
+            df.columns = [c.lower() for c in df.columns]
+            df.index = pd.to_datetime(df.index)
+            return df
+        except Exception:
+            return None
+
     # Write all stocks' OHLCV data to Excel (one sheet per symbol), overwriting the file.
     def export_stock_data(self, stocks: Dict) -> str:
         with _LOCK:
@@ -368,11 +382,10 @@ class ExcelExporter:
             wb.save(self._score_file)
 
     # Build a per-symbol DataFrame of all predictions vs actuals for the scores file.
-    # Uses same-day close matching and includes unmatched rows, mirroring the score viewer exactly.
-    @staticmethod
-    def _score_df_for_export(symbol: str, data: Dict) -> Optional[pd.DataFrame]:
+    # Actual close is read from stock_data.xlsx so it matches the persisted OHLCV record.
+    def _score_df_for_export(self, symbol: str, data: Dict) -> Optional[pd.DataFrame]:
         ph = data.get("pred_history", [])
-        df = data.get("raw_df")
+        df = self.load_stock_data(symbol)
         if not ph:
             return None
 

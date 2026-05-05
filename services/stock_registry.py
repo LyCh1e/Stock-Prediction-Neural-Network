@@ -119,6 +119,10 @@ class StockRegistry:
     def update(self, symbol: str) -> None:
         threading.Thread(target=self._update_thread, args=(symbol,), daemon=True).start()
 
+    # Spawn a background thread to fetch fresh OHLCV and save to stock_data.xlsx for symbol.
+    def refresh_data(self, symbol: str) -> None:
+        threading.Thread(target=self._refresh_data_thread, args=(symbol,), daemon=True).start()
+
     # ------------------------------------------------------------------ #
     # Symbol persistence                                                 #
     # ------------------------------------------------------------------ #
@@ -145,6 +149,10 @@ class StockRegistry:
     # ------------------------------------------------------------------ #
     # Excel export delegates                                             #
     # ------------------------------------------------------------------ #
+
+    # Read a symbol's close history from stock_data.xlsx; returns None if unavailable.
+    def load_stock_data(self, symbol: str):
+        return self._exporter.load_stock_data(symbol.upper())
 
     # Delegate OHLCV Excel update to the exporter; return the file path.
     def update_stock_data(self) -> str:
@@ -233,7 +241,7 @@ class StockRegistry:
             self._cb("status", f"Predicting {symbol}…")
             lookback = data["lookback"]
 
-            self._archive_prediction(data)
+            self._archive_prediction(symbol, data)
             raw_df = self._service.fetch_data(symbol)
             data["raw_df"] = raw_df
             pred = self._service.predict(
@@ -264,7 +272,7 @@ class StockRegistry:
             self._service.adaptive_update(
                 symbol, data["network"], data["scaler_params"], lookback_window=lookback
             )
-            self._archive_prediction(data)
+            self._archive_prediction(symbol, data)
 
             raw_df = self._service.fetch_data(symbol)
             data["raw_df"] = raw_df
@@ -288,6 +296,22 @@ class StockRegistry:
     # ------------------------------------------------------------------ #
     # Private helpers                                                    #
     # ------------------------------------------------------------------ #
+
+    # Background worker: fetch fresh OHLCV and save to stock_data.xlsx; skips untrained symbols.
+    def _refresh_data_thread(self, symbol: str) -> None:
+        try:
+            data = self._stocks.get(symbol)
+            if data is None or not data.get("network"):
+                return
+            raw_df = self._service.fetch_data(symbol)
+            data["raw_df"] = raw_df
+            self._exporter.update_stock_data({symbol: data})
+            self._cb("pull_status", ("ok", symbol))
+            self._cb("refresh", symbol)
+            self._cb("log", f"✓ {symbol} stock data refreshed")
+        except Exception as exc:
+            self._cb("pull_status", ("error", symbol))
+            self._cb("log", f"✗ {symbol} data refresh error: {exc}")
 
     # Load error stats from prediction_score.xlsx and apply band calibration to pred.
     # Returns pred unchanged if there is insufficient history (< 5 matched predictions).
@@ -343,7 +367,8 @@ class StockRegistry:
             self._cb("log", f"Warning: could not save model for {symbol}: {exc}")
 
     # Move the current prediction into pred_history (upsert by date) and refresh the accuracy score.
-    def _archive_prediction(self, data: StockEntry) -> None:
+    # Actual close is sourced from stock_data.xlsx so scoring matches the persisted OHLCV record.
+    def _archive_prediction(self, symbol: str, data: StockEntry) -> None:
         import math
         old_pred = data.get("prediction")
         if old_pred and "scenarios" in old_pred:
@@ -371,9 +396,9 @@ class StockRegistry:
                     break
             else:
                 ph.append(entry)
-            ph = data.get("pred_history", [])
-            df = data.get("raw_df")
-            cp = old_pred.get("current_price", 0.0)
+            ph  = data.get("pred_history", [])
+            df  = self._exporter.load_stock_data(symbol)
+            cp  = old_pred.get("current_price", 0.0)
             if df is not None:
                 data["accuracy_score"] = score_symbol(ph, df, cp)
 

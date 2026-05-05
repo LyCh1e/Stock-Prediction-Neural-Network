@@ -19,7 +19,7 @@ A modular neural network system that fetches stock data from **Yahoo Finance** (
 - **Stock Filter**: Search bar in both the Stock Manager and Edit Model tabs to quickly filter tracked symbols by name
 - **Edit Model Tab**: Adjust lookback and epoch settings per stock without restarting; changes apply on the next training run
 - **Startup Splash Screen**: Dependency checker and data-file validator shown before the main window opens — missing packages and corrupt/absent files are flagged before any training starts
-- **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes; `stock_predictions.xlsx` and `prediction_score.xlsx` auto-saved every 20 minutes — the UI never freezes
+- **Background Auto-Updates**: Adaptive model updates round-robin across all tracked symbols; predictions refreshed every 5 minutes; `stock_data.xlsx` pulled and saved on launch then every 15 minutes; `stock_predictions.xlsx` and `prediction_score.xlsx` auto-saved every 20 minutes — the UI never freezes
 - **Live Current Price**: Current Price column reflects the latest traded price (intraday during market hours, official close after market close) — not a stale end-of-previous-day value
 - **Excel Export**: OHLCV history → `stock_data.xlsx`; prediction scenarios → `stock_predictions.xlsx`; full prediction score breakdown → `prediction_score.xlsx`
 
@@ -126,7 +126,7 @@ Composite score (0–100) from three components:
 | Directional accuracy | 30% | Did the model get up/down right? |
 | Within-range accuracy | 20% | Did the actual close land inside the best/worst band? |
 
-Letter grades: A+ (≥93) → F (<20). Scores update automatically after every prediction cycle.
+Letter grades: A+ (≥93) → F (<20). Scores update automatically after every prediction cycle. Actual close values are read directly from `stock_data.xlsx` so scoring, the score viewer, and `prediction_score.xlsx` all share the same authoritative OHLCV source.
 
 ![Prediction Score](figures/prediction_score.png)
 *Prediction score breakdown with letter grades and per-prediction accuracy metrics*
@@ -147,7 +147,7 @@ _train_thread
 
 _predict_thread / _update_thread
     → predict / adaptive_update
-    → archive_prediction    (push current pred into history)
+    → archive_prediction    (push current pred into history; reads actual close from stock_data.xlsx)
     → save model + history
 ```
 
@@ -155,7 +155,7 @@ _predict_thread / _update_thread
 
 | File | Contents |
 |------|---------|
-| `stock_data.xlsx` | One sheet per symbol — append-only OHLCV history |
+| `stock_data.xlsx` | One sheet per symbol — append-only OHLCV history; used as the authoritative source for Actual Close in all scoring and score exports |
 | `stock_predictions.xlsx` | One sheet per symbol — scenario rows (Best Case / Average Case / Worst Case) |
 | `prediction_score.xlsx` | One sheet per symbol — every archived prediction with Predicted Close, Best Case, Worst Case, Actual Close, Error %, In Range, and Direction Correct; unmatched rows show "Pending" or "Not Available" |
 
@@ -194,7 +194,7 @@ Updates every 60 seconds automatically.
 4. Select a stock and click "Show Chart" to open its price history and forecast popup
 5. Click "Predict All" to refresh forecasts
 6. Click "Update All" for adaptive incremental learning
-7. Click "Update Stock Data" or "Update Predictions" to write xlsx files
+7. Click "Update Stock Data" to force a fresh fetch from Yahoo Finance, or "Update Predictions" to write the latest prediction scenarios to xlsx
 8. Switch to "Edit Model" to adjust lookback/epoch settings per stock
 ```
 
@@ -206,7 +206,7 @@ Updates every 60 seconds automatically.
 | Predict All | Refresh predictions for every tracked stock |
 | Update All | Adaptive update for every tracked stock |
 | Remove Selected | Remove selected stock(s) from the tracker |
-| Update Stock Data | Append new OHLCV rows to `stock_data.xlsx` (recreates file if corrupt) |
+| Update Stock Data | Fetch fresh OHLCV from Yahoo Finance for all trained stocks and save to `stock_data.xlsx` immediately (also happens automatically on launch and every 15 minutes) |
 | Update Predictions | Append new prediction rows to `stock_predictions.xlsx` |
 | Update Scores | Write the full prediction score breakdown to `prediction_score.xlsx` — all archived predictions, with Actual Close filled in where available and "Pending" / "Not Available" for future or weekend dates |
 | View Score | Show accuracy score and all archived predictions for the selected stock in a popup window — matches `prediction_score.xlsx` one-to-one |

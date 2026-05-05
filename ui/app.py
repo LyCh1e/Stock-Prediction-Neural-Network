@@ -138,16 +138,15 @@ class StockPriceApp:
         for sym in self.registry.symbols():
             self.registry.update(sym)
 
-    # Write fresh OHLCV data to Excel for all trained stocks, showing the path on success.
+    # Fetch fresh OHLCV from Yahoo Finance and save to stock_data.xlsx for all trained stocks.
     def _update_data(self) -> None:
-        if not any(d.get("raw_df") is not None for d in self.registry.stocks.values()):
-            messagebox.showinfo("Info", "No stock data yet. Train a stock first.")
+        syms = self.registry.symbols()
+        if not syms:
+            messagebox.showinfo("Info", "No stocks tracked yet.")
             return
-        try:
-            path = self.registry.update_stock_data()
-            messagebox.showinfo("Updated", f"Stock data updated in:\n{path}")
-        except Exception as exc:
-            messagebox.showerror("Error", str(exc))
+        for sym in syms:
+            self.registry.refresh_data(sym)
+        self._stock_tab.log(f"Fetching fresh data for {len(syms)} symbol(s)…")
 
     # Migrate legacy score rows from stock_predictions.xlsx, then force-write prediction_score.xlsx.
     def _update_scores(self) -> None:
@@ -190,7 +189,7 @@ class StockPriceApp:
             messagebox.showinfo("No History", f"{symbol} has no archived predictions yet.")
             return
 
-        raw_df  = data.get("raw_df")
+        raw_df  = self.registry.load_stock_data(symbol)
         records = _parse_records(pred_history)
 
         # Same-day close lookup
@@ -345,11 +344,12 @@ class StockPriceApp:
         self._running = False
         self.root.quit()
 
-    # Launch the background auto-update, auto-predict, and auto-export daemon threads.
+    # Launch the background auto-update, auto-predict, auto-export, and auto-data-refresh daemon threads.
     def _start_auto_threads(self) -> None:
         threading.Thread(target=self._auto_update_loop,  daemon=True).start()
         threading.Thread(target=self._auto_predict_loop, daemon=True).start()
         threading.Thread(target=self._auto_export_loop,  daemon=True).start()
+        threading.Thread(target=self._auto_data_loop,    daemon=True).start()
 
     # Round-robin adaptive updates across all symbols at ~1000 calls/hour.
     def _auto_update_loop(self) -> None:
@@ -372,6 +372,19 @@ class StockPriceApp:
                 break
             for sym in self.registry.symbols():
                 self.registry.predict(sym)
+
+    # On launch, immediately fetch and save stock_data.xlsx for all trained symbols,
+    # then repeat every 15 minutes so the file stays current while the app runs.
+    def _auto_data_loop(self) -> None:
+        time.sleep(2)  # let training threads initialize before first pull
+        for sym in self.registry.symbols():
+            self.registry.refresh_data(sym)
+        while self._running:
+            time.sleep(900)
+            if not self._running:
+                break
+            for sym in self.registry.symbols():
+                self.registry.refresh_data(sym)
 
     # Auto-save stock_predictions.xlsx and prediction_score.xlsx every 20 minutes.
     # Also ensures prediction_score.xlsx exists on startup before the first interval fires.
